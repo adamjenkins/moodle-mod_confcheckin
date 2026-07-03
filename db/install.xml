@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="mod/confcheckin/db" VERSION="2026070400" COMMENT="XMLDB file for Moodle mod/confcheckin"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
+  <TABLES>
+    <TABLE NAME="confcheckin" COMMENT="Main table for Conference Check-in activity instances">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="course" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Course this activity belongs to"/>
+        <FIELD NAME="name" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false" COMMENT="Activity name"/>
+        <FIELD NAME="intro" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Activity description shown on course page"/>
+        <FIELD NAME="introformat" TYPE="int" LENGTH="4" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Format of the intro field"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="course" TYPE="foreign" FIELDS="course" REFTABLE="course" REFFIELDS="id"/>
+      </KEYS>
+    </TABLE>
+    <TABLE NAME="confcheckin_tickettype" COMMENT="Organiser-defined ticket types for a confcheckin instance (e.g. 1-Day Pass, Presenter, Student). price/currency live here, one per ticket type, rather than on a separate payment-config table, since each ticket type can have its own price in a typical multi-tier-ticket conference model. price/currency are TYPE=char to match core_payment's own amount/currency field convention (verified against {payments}.amount/{payments}.currency and enrol_fee's {enrol}.cost/{enrol}.currency in this Moodle checkout: both are stored as a decimal string in a char(20) field plus a char(3) ISO 4217 currency code, not an integer minor-unit amount), so Phase 4.3's core_payment integration needs no schema change here.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="confcheckin" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Foreign key to confcheckin table"/>
+        <FIELD NAME="name" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false" COMMENT="Ticket type name, e.g. 1-Day Pass, Presenter, Student"/>
+        <FIELD NAME="price" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" DEFAULT="0.00" COMMENT="Decimal price string, matching core_payment's {payments}.amount / enrol_fee's {enrol}.cost field convention (char(20) decimal string, not integer minor units)"/>
+        <FIELD NAME="currency" TYPE="char" LENGTH="3" NOTNULL="true" SEQUENCE="false" DEFAULT="USD" COMMENT="ISO 4217 currency code, matching core_payment's {payments}.currency / enrol_fee's {enrol}.currency field convention (char(3))"/>
+        <FIELD NAME="capacity" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Maximum tickets of this type; null means unlimited"/>
+        <FIELD NAME="presenteronly" TYPE="int" LENGTH="1" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Whether this ticket type is only purchasable/claimable by a user who is an accepted-submission speaker, checked via mod_confprogram's API in a later phase"/>
+        <FIELD NAME="validfrom" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Unix timestamp; ticket only admits from this time onward. Null means no restriction"/>
+        <FIELD NAME="validto" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Unix timestamp; ticket only admits until this time. Null means no restriction"/>
+        <FIELD NAME="sortorder" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
+        <FIELD NAME="visible" TYPE="int" LENGTH="1" NOTNULL="true" SEQUENCE="false" DEFAULT="1" COMMENT="Whether this ticket type is offered for purchase; 0 hides it without deleting it"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="confcheckin" TYPE="foreign" FIELDS="confcheckin" REFTABLE="confcheckin" REFFIELDS="id"/>
+      </KEYS>
+    </TABLE>
+    <TABLE NAME="confcheckin_ticket" COMMENT="An issued ticket: one row per attendee per confcheckin instance. At most one active ticket per user per instance is a reasonable business rule but is deliberately NOT enforced via a DB unique constraint here, since a later phase may need to allow re-purchase after a refund/cancellation. This table does NOT itself store payment amount/status -- that lives in core_payment's own {payments} table, linked back via that subsystem's component/paymentarea/itemid convention (component = mod_confcheckin; the exact paymentarea/itemid semantics, e.g. whether itemid is the tickettypeid or a pending ticket id, are decided in Phase 4.3's classes/payment/service_provider.php, modeled on enrol_fee's implementation).">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="confcheckin" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Foreign key to confcheckin table"/>
+        <FIELD NAME="tickettypeid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Foreign key to confcheckin_tickettype table"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Foreign key to user table; the ticket holder"/>
+        <FIELD NAME="origin" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" DEFAULT="purchase" COMMENT="One of purchase, free or promo; enforced in PHP, not a DB CHECK constraint"/>
+        <FIELD NAME="promocodeid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="References confcheckin_promocode.id when origin = promo, else null. Deliberately not declared as a DB-level foreign key, matching the exact key list this table was specified with"/>
+        <FIELD NAME="qrtoken" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="A unique, non-guessable random token identifying this ticket's QR code. MUST be generated from a cryptographically-random source (e.g. random_bytes()/random_string(), never a sequential or predictable value) when implemented in a later phase -- a guessable token would let anyone forge/scan another attendee's check-in"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="confcheckin" TYPE="foreign" FIELDS="confcheckin" REFTABLE="confcheckin" REFFIELDS="id"/>
+        <KEY NAME="tickettypeid" TYPE="foreign" FIELDS="tickettypeid" REFTABLE="confcheckin_tickettype" REFFIELDS="id"/>
+        <KEY NAME="userid" TYPE="foreign" FIELDS="userid" REFTABLE="user" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="qrtoken" UNIQUE="true" FIELDS="qrtoken" COMMENT="The lookup key the QR scanner will use"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="confcheckin_checkin" COMMENT="A recorded check-in event for an issued ticket">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="ticketid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Foreign key to confcheckin_ticket table"/>
+        <FIELD NAME="scannedby" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Foreign key to user table; whoever performed the scan"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="When the check-in was recorded"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="ticketid" TYPE="foreign" FIELDS="ticketid" REFTABLE="confcheckin_ticket" REFFIELDS="id"/>
+        <KEY NAME="scannedby" TYPE="foreign" FIELDS="scannedby" REFTABLE="user" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="ticketid" UNIQUE="true" FIELDS="ticketid" COMMENT="One check-in per ticket; the schema itself makes a second check-in row for the same ticket impossible. Re-scanning an already-checked-in ticket is a later phase's business logic to reject gracefully client-side, but the DB constraint is the authoritative guarantee"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="confcheckin_template" COMMENT="Organiser-edited TinyMCE templates for badge/ticket/receipt/certificate PDFs">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="confcheckin" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Foreign key to confcheckin table"/>
+        <FIELD NAME="templatetype" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" COMMENT="One of badge, ticket, receipt or certificate; enforced in PHP"/>
+        <FIELD NAME="content" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="TinyMCE-authored HTML with embeddable placeholder fields (e.g. {{fullname}}, {{tickettype}}); placeholder rendering itself is implemented in a later phase"/>
+        <FIELD NAME="contentformat" TYPE="int" LENGTH="4" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Standard Moodle text-format field for the content column, same type/length/default convention as this plugin's own introformat field (no existing rich-text field with its own format column exists yet in the sibling plugins' shipped schemas to match instead)"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="confcheckin" TYPE="foreign" FIELDS="confcheckin" REFTABLE="confcheckin" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="confcheckintype" UNIQUE="true" FIELDS="confcheckin, templatetype" COMMENT="At most one template per type per instance"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="confcheckin_promocode" COMMENT="Organiser-issued free/discount codes, redeemable for a specific ticket type">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="confcheckin" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Foreign key to confcheckin table"/>
+        <FIELD NAME="code" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The redeemable code string"/>
+        <FIELD NAME="tickettypeid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Foreign key to confcheckin_tickettype table; which ticket type this code grants for free"/>
+        <FIELD NAME="maxuses" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Maximum number of redemptions; null means unlimited"/>
+        <FIELD NAME="timesused" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
+        <FIELD NAME="timeexpires" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Unix timestamp after which the code can no longer be redeemed; null means it never expires"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="confcheckin" TYPE="foreign" FIELDS="confcheckin" REFTABLE="confcheckin" REFFIELDS="id"/>
+        <KEY NAME="tickettypeid" TYPE="foreign" FIELDS="tickettypeid" REFTABLE="confcheckin_tickettype" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="confcheckincode" UNIQUE="true" FIELDS="confcheckin, code" COMMENT="A code is unique within one instance, not necessarily globally"/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>
