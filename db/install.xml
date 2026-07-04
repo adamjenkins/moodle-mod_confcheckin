@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="mod/confcheckin/db" VERSION="2026070400" COMMENT="XMLDB file for Moodle mod/confcheckin"
+<XMLDB PATH="mod/confcheckin/db" VERSION="2026070401" COMMENT="XMLDB file for Moodle mod/confcheckin"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
   <TABLES>
@@ -10,6 +10,8 @@
         <FIELD NAME="name" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false" COMMENT="Activity name"/>
         <FIELD NAME="intro" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Activity description shown on course page"/>
         <FIELD NAME="introformat" TYPE="int" LENGTH="4" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Format of the intro field"/>
+        <FIELD NAME="confprogramcmid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Course-module id of the mod_confprogram instance this checkin instance checks presenter-ticket eligibility against. Nullable (Phase 4.3): unlike mod_confscheduler's confprogramcmid (a hard requirement), a confcheckin instance with no link simply has no usable presenteronly ticket types -- see classes/local/eligibility.php's docblock for the exact behaviour"/>
+        <FIELD NAME="paymentaccountid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="core_payment account id (payment.accountid) this instance's paid ticket types are payable to. Nullable: an instance selling only free/promo ticket types never needs one. Not a real foreign key: core_payment's account table lives outside this plugin's install.xml lineage"/>
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
         <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
       </FIELDS>
@@ -31,6 +33,7 @@
         <FIELD NAME="validto" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Unix timestamp; ticket only admits until this time. Null means no restriction"/>
         <FIELD NAME="sortorder" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
         <FIELD NAME="visible" TYPE="int" LENGTH="1" NOTNULL="true" SEQUENCE="false" DEFAULT="1" COMMENT="Whether this ticket type is offered for purchase; 0 hides it without deleting it"/>
+        <FIELD NAME="soldcount" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Number of confcheckin_ticket rows ever issued for this ticket type (purchase+free+promo combined). Maintained by classes/local/ticket_service.php's atomic reserve-and-issue logic (SELECT ... FOR UPDATE inside a delegated transaction), NOT by counting confcheckin_ticket rows on demand, so that a capacity check-and-increment is a single indivisible operation under concurrent purchases -- see that class's docblock for the full race-condition rationale. Never decremented (no refund/cancellation flow exists yet)"/>
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
         <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
       </FIELDS>
@@ -39,7 +42,7 @@
         <KEY NAME="confcheckin" TYPE="foreign" FIELDS="confcheckin" REFTABLE="confcheckin" REFFIELDS="id"/>
       </KEYS>
     </TABLE>
-    <TABLE NAME="confcheckin_ticket" COMMENT="An issued ticket: one row per attendee per confcheckin instance. At most one active ticket per user per instance is a reasonable business rule but is deliberately NOT enforced via a DB unique constraint here, since a later phase may need to allow re-purchase after a refund/cancellation. This table does NOT itself store payment amount/status -- that lives in core_payment's own {payments} table, linked back via that subsystem's component/paymentarea/itemid convention (component = mod_confcheckin; the exact paymentarea/itemid semantics, e.g. whether itemid is the tickettypeid or a pending ticket id, are decided in Phase 4.3's classes/payment/service_provider.php, modeled on enrol_fee's implementation).">
+    <TABLE NAME="confcheckin_ticket" COMMENT="An issued ticket: one row per attendee per confcheckin instance. At most one active ticket per user per instance is a reasonable business rule but is deliberately NOT enforced via a DB unique constraint here, since a later phase may need to allow re-purchase after a refund/cancellation. This table does NOT itself store payment amount/status -- that lives in core_payment's own {payments} table, linked back via that subsystem's component/paymentarea/itemid convention. Phase 4.3 decision: component = mod_confcheckin, paymentarea = 'tickettype', itemid = confcheckin_tickettype.id (the ticket type being bought, NOT a pre-created pending ticket row -- unlike some payable models, nothing is inserted into this table until classes/payment/service_provider.php::deliver_order() runs after a successful payment, matching enrol_fee's pattern of only calling enrol_user() in deliver_order() rather than pre-creating a pending enrolment).">
       <FIELDS>
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
         <FIELD NAME="confcheckin" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Foreign key to confcheckin table"/>

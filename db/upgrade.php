@@ -25,15 +25,42 @@
 /**
  * Runs upgrade steps between versions.
  *
- * No upgrade steps yet: the initial schema is installed directly via
- * db/install.xml. Add xmldb_confcheckin_upgrade() savepoint blocks here
- * (see mod_confsubmissions's/mod_confscheduler's db/upgrade.php for the
- * established pattern) once a schema/capability change ships after this
- * scaffold, per the moodle-bump-version skill workflow.
- *
  * @param int $oldversion Plugin version being upgraded from
  * @return bool
  */
 function xmldb_confcheckin_upgrade($oldversion) {
+    global $DB;
+
+    $dbman = $DB->get_manager();
+
+    if ($oldversion < 2026070401) {
+        // Phase 4.3: link to a mod_confprogram instance for presenter-ticket eligibility
+        // (nullable soft-link, same pattern as mod_confscheduler's confprogramcmid), and
+        // a nullable core_payment account id for paid ticket types.
+        $table = new xmldb_table('confcheckin');
+
+        $field = new xmldb_field('confprogramcmid', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'introformat');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $field = new xmldb_field('paymentaccountid', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'confprogramcmid');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Phase 4.3: atomic capacity-tracking counter for confcheckin_tickettype. See
+        // db/install.xml's table comment and classes/local/ticket_service.php for why
+        // this is a maintained counter, not a COUNT(*) over confcheckin_ticket.
+        $table = new xmldb_table('confcheckin_tickettype');
+
+        $field = new xmldb_field('soldcount', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'visible');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026070401, 'confcheckin');
+    }
+
     return true;
 }

@@ -17,15 +17,12 @@
 /**
  * Main view page for mod_confcheckin.
  *
- * This is a minimal scaffold: it renders the activity intro only, gated by
- * plain course-module visibility (require_login()) since no general "view
- * this activity" capability exists yet in this scaffold phase -- only
- * narrower action-specific capabilities (:purchase, :viewowncertificate,
- * etc.) which do not apply to everyone who should be able to see this page
- * (e.g. an editingteacher checking the activity is set up correctly holds
- * none of them by default). Ticket purchase, badge/certificate download,
- * and the QR scanner are follow-up work (Phases 4.3-4.5) and will replace
- * this placeholder body with capability-gated sections of their own.
+ * Renders the activity intro plus capability-gated links into the screens Phase 4.3
+ * added (ticket type/promo code management, ticket purchase). Badge/certificate
+ * download and the QR scanner are still follow-up work (Phases 4.4-4.5). No general
+ * "view this activity" capability exists yet -- plain course-module visibility
+ * (require_login()) gates the page itself, and each link below is only shown to a
+ * user who actually holds the capability the target page requires.
  *
  * @package    mod_confcheckin
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
@@ -64,6 +61,30 @@ if ($confcheckin->intro) {
     );
 }
 
-echo $OUTPUT->notification(get_string('scaffoldnotice', 'mod_confcheckin'), 'info');
+$links = [];
+if (has_capability('mod/confcheckin:purchase', $context)) {
+    $links[] = html_writer::link(
+        new moodle_url('/mod/confcheckin/purchase.php', ['id' => $cm->id]),
+        get_string('purchaseticket', 'confcheckin')
+    );
+}
+if (has_capability('mod/confcheckin:managetickettypes', $context)) {
+    $links[] = html_writer::link(
+        new moodle_url('/mod/confcheckin/tickettypes.php', ['id' => $cm->id]),
+        get_string('managetickettypes', 'confcheckin')
+    );
+    $links[] = html_writer::link(
+        new moodle_url('/mod/confcheckin/promocodes.php', ['id' => $cm->id]),
+        get_string('managepromocodes', 'confcheckin')
+    );
+}
+
+if ($links) {
+    echo html_writer::alist($links);
+} else {
+    echo $OUTPUT->notification(get_string('scaffoldnotice', 'confcheckin'), 'info');
+}
+
+echo $OUTPUT->notification(get_string('scaffoldnoticebadges', 'confcheckin'), 'info');
 
 echo $OUTPUT->footer();

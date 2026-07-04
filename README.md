@@ -18,7 +18,15 @@ Part of the [Conference Tools](https://github.com/adamjenkins/moodle-conference-
 
 ## Current status
 
-This repo is currently at the **scaffold stage** (Phases 4.1-4.2 of the coordination repo's `TASKLIST.md`): plugin skeleton, full schema, capabilities, a real (non-null) privacy provider, base language strings, and a minimal settings/view page. None of the ticket purchase flow, payment integration, PDF/badge generation, QR scanning, or check-in logic described above is implemented yet — those are Phases 4.3-4.5.
+Ticket types, presenter-ticket eligibility, and the purchase flow (Phase 4.3 of the coordination repo's `TASKLIST.md`) are built. `tickettypes.php`/`promocodes.php` let organisers manage ticket types (name, price, currency, capacity, presenter-only flag, validity window) and promo codes; `purchase.php` lets attendees claim a price-zero ticket, redeem a promo code, or pay for a priced ticket type via `core_payment` (`classes/payment/service_provider.php`, modeled on `enrol_fee`). PDF/badge generation, QR-code rendering, the check-in scanner, and attendance certificates (Phases 4.4-4.5) are not yet built.
+
+## Architecture notes
+
+- **Capacity/redemption-count race safety**: `classes/local/ticket_service.php` uses `SELECT ... FOR UPDATE` row locking inside a Moodle delegated transaction to make a capacity check-and-increment (and a promo code's `timesused` check-and-increment) a single indivisible operation under concurrent requests — Moodle's DML API does not expose an affected-row count from a conditional `UPDATE`, so that simpler approach isn't available. Verified live: two simultaneous claims of a capacity-1 ticket type correctly result in exactly one issued ticket, never zero or two.
+- **Presenter-ticket eligibility** (`classes/local/eligibility.php`) deliberately does NOT check `mod_confprogram`'s Display-phase embargo — a presenter can claim their presenter ticket the moment their submission is accepted, not only once the programme is publicly displayed. This is a deliberate product decision, not an oversight; see that class's docblock if it ever needs revisiting.
+- **QR tokens** (`ticket_service::generate_qrtoken()`) are generated via `bin2hex(random_bytes(32))` — a genuine CSPRNG, hex-encoded to avoid the slight modulo bias Moodle's own `random_string()` helper has. A guessable token would let anyone forge/scan another attendee's check-in once Phase 4.5 builds the scanner.
+- **`paymentarea`/`itemid` convention**: `paymentarea` is always `'tickettype'`, `itemid` is a `confcheckin_tickettype.id` — nothing is inserted into `confcheckin_ticket` until `service_provider::deliver_order()` runs after a successful payment (matching `enrol_fee`'s own pattern of only calling `enrol_user()` inside `deliver_order()`, never pre-creating a pending row).
+- **A price-zero ticket type and a promo code redemption both bypass `core_payment` entirely** (origin `free`/`promo` respectively) — there's nothing to actually charge, so no payment record is created and no receipt is offered (receipts only ever apply to a genuinely paid `origin = 'purchase'` ticket, in a later phase).
 
 ## Requirements
 

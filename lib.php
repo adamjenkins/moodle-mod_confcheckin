@@ -65,7 +65,27 @@ function confcheckin_add_instance(stdClass $data, ?mod_confcheckin_mod_form $for
         $data->introformat = FORMAT_HTML;
     }
 
+    confcheckin_normalise_soft_links($data);
+
     return $DB->insert_record('confcheckin', $data);
+}
+
+/**
+ * Normalises the mod_form.php "0 = none" select sentinel to a real null for the two
+ * nullable soft-link columns, matching db/install.xml's "null means no link" column
+ * comments (mod_form.php's select elements use 0, not an empty string, as their
+ * "unset" option value, since both fields are PARAM_INT).
+ *
+ * @param stdClass $data Data from the settings form, modified in place
+ * @return void
+ */
+function confcheckin_normalise_soft_links(stdClass $data): void {
+    if (isset($data->confprogramcmid) && (int) $data->confprogramcmid === 0) {
+        $data->confprogramcmid = null;
+    }
+    if (isset($data->paymentaccountid) && (int) $data->paymentaccountid === 0) {
+        $data->paymentaccountid = null;
+    }
 }
 
 /**
@@ -80,6 +100,8 @@ function confcheckin_update_instance(stdClass $data, ?mod_confcheckin_mod_form $
 
     $data->timemodified = time();
     $data->id = $data->instance;
+
+    confcheckin_normalise_soft_links($data);
 
     return $DB->update_record('confcheckin', $data);
 }
@@ -125,4 +147,71 @@ function confcheckin_delete_instance($id) {
     $DB->delete_records('confcheckin', ['id' => $id]);
 
     return true;
+}
+
+/**
+ * Returns a currency-code => "CODE - Name" select option list covering every ISO 4217
+ * code Moodle core knows about (lang/en/currencies.php, component 'core_currencies'),
+ * NOT just the currencies supported by whatever payment gateways happen to be
+ * installed/enabled right now (unlike enrol_fee's own get_possible_currencies(), which
+ * intentionally restricts to \core_payment\helper::get_supported_currencies()).
+ * Ticket types are organiser configuration that can reasonably be entered before a
+ * payment gateway account exists at all (e.g. while setting up a free/promo-only
+ * instance, or before a PayPal account is configured), so this plugin validates
+ * currency against the full ISO 4217 set core ships strings for, via
+ * confcheckin_is_valid_currency() below, rather than against the narrower
+ * currently-enabled-gateway subset.
+ *
+ * @return array<string, string> Currency code => display label, sorted by code
+ */
+function confcheckin_get_currency_options(): array {
+    $strings = get_string_manager()->load_component_strings('core_currencies', current_language());
+
+    $options = [];
+    foreach ($strings as $code => $name) {
+        $options[$code] = "$code - $name";
+    }
+    ksort($options);
+
+    return $options;
+}
+
+/**
+ * Whether a string is a real ISO 4217 currency code, i.e. one core has a display name
+ * string for in the 'core_currencies' component. See confcheckin_get_currency_options()'s
+ * docblock for why this is checked against the full ISO 4217 set rather than the
+ * currently-enabled-payment-gateway subset.
+ *
+ * @param string $code A currency code, e.g. 'USD'
+ * @return bool
+ */
+function confcheckin_is_valid_currency(string $code): bool {
+    return get_string_manager()->string_exists($code, 'core_currencies');
+}
+
+/**
+ * Parses a user-entered price string into a validated decimal amount, applying the
+ * same decimal-separator tolerance enrol_fee's edit_instance_validation() applies to
+ * its own cost field (str_replace the current language's decimal separator with '.'
+ * before is_numeric()), plus a non-negative check (enrol_fee's cost field allows
+ * negative values since a negative enrolment cost has no real meaning there either,
+ * but does not explicitly reject them; a ticket price has no meaningful negative
+ * value, so this plugin rejects them explicitly).
+ *
+ * @param string $raw The raw, user-entered price string
+ * @return float|false The parsed non-negative amount, or false if invalid
+ */
+function confcheckin_parse_price(string $raw) {
+    $normalised = str_replace(get_string('decsep', 'langconfig'), '.', trim($raw));
+
+    if ($normalised === '' || !is_numeric($normalised)) {
+        return false;
+    }
+
+    $amount = (float) $normalised;
+    if ($amount < 0) {
+        return false;
+    }
+
+    return $amount;
 }
