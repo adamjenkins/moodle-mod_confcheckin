@@ -18,7 +18,7 @@ Part of the [Conference Tools](https://github.com/adamjenkins/moodle-conference-
 
 ## Current status
 
-Ticket types, presenter-ticket eligibility, and the purchase flow (Phase 4.3 of the coordination repo's `TASKLIST.md`) are built. `tickettypes.php`/`promocodes.php` let organisers manage ticket types (name, price, currency, capacity, presenter-only flag, validity window) and promo codes; `purchase.php` lets attendees claim a price-zero ticket, redeem a promo code, or pay for a priced ticket type via `core_payment` (`classes/payment/service_provider.php`, modeled on `enrol_fee`). PDF/badge generation, QR-code rendering, the check-in scanner, and attendance certificates (Phases 4.4-4.5) are not yet built.
+Ticket types, presenter-ticket eligibility, and the purchase flow (Phase 4.3), plus badge/ticket/receipt template editing, QR-coded PDF generation, and per-user/bulk downloads (Phase 4.4 of the coordination repo's `TASKLIST.md`) are built. `tickettypes.php`/`promocodes.php` let organisers manage ticket types (name, price, currency, capacity, presenter-only flag, validity window) and promo codes; `purchase.php` lets attendees claim a price-zero ticket, redeem a promo code, or pay for a priced ticket type via `core_payment` (`classes/payment/service_provider.php`, modeled on `enrol_fee`). `templates.php` lets organisers edit each template type in TinyMCE, with placeholders substituted (`classes/local/placeholder.php`) and rendered to a real PDF (`classes/local/pdf_generator.php`, Moodle's own `pdf`/TCPDF wrapper) — `badge.php` for a single ticket, `badges.php` for a bulk ZIP. The check-in scanner and attendance certificates (Phase 4.5) are not yet built.
 
 ## Architecture notes
 

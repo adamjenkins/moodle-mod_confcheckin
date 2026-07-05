@@ -119,3 +119,61 @@
     are available in this environment to live-test an actual gateway
     checkout, a limitation documented since this project's Plugin 4
     planning stage.
+
+- Phase 4.4: TinyMCE badge/ticket/receipt/certificate templates, QR-coded PDFs,
+  and per-user/bulk downloads. No schema change (`confcheckin_template` already
+  existed from Phase 4.2) — version bumped (`2026070501`) purely to register
+  this release.
+  - `classes/local/placeholder.php`: `build_context()` produces one text/HTML
+    replacement per recognised `{{name}}` placeholder (`fullname`, `email`,
+    `tickettype`, `confcheckinname`, `origin`, `qrtoken`, `qrcode`, and, for
+    an eligible presenter only, `submissiontitle`/`track` — both `''` for
+    anyone else) for a ticket; every value except `qrcode` is HTML-escaped
+    (`s()`/`format_string()`) since `render()` performs a raw string
+    substitution with no escaping of its own. `qrcode` is rendered via
+    `qr_image_tag()`: `core_qrcode` (`lib/classes/qrcode.php`, a thin TCPDF
+    wrapper already in Moodle core) generates a PNG, embedded directly as a
+    `data:image/png;base64,...` `<img>` tag — TCPDF's `writeHTML()` supports
+    base64 data-URI images natively, so no temp file is needed. `render()`
+    silently drops (replaces with `''`) any placeholder the context has no
+    entry for, rather than leaving the literal `{{name}}` text in the
+    rendered PDF. `classes/local/eligibility.php::is_presenter()` was
+    refactored into a new `find_presenter_submission()` (returning the
+    accepted submission itself, not just a bool) that both `is_presenter()`
+    and `build_context()`'s presenter-only placeholders now share, so this
+    doesn't duplicate that class's own cross-plugin lookup chain.
+  - `classes/local/pdf_generator.php`: renders a template (or, until an
+    organiser configures one, a simple built-in fallback per type) to a real
+    PDF via Moodle's own `pdf` wrapper (`lib/pdflib.php`, TCPDF). `build()`
+    returns the constructed `\pdf` object rather than already-`Output()`'d
+    bytes, so a caller chooses delivery mode itself: `'D'` (direct download,
+    `badge.php`), `'S'` (raw string, bundled into a ZIP by `badges.php`), or
+    `'I'` (inline). A real bug caught by `test_get_template_content_blank_row_falls_back_to_default`:
+    `get_template_content()`'s original blank-check (`trim(strip_tags(...))`)
+    treated a template containing only a lone `&nbsp;` (which TinyMCE
+    routinely leaves in an otherwise-empty paragraph, so the editor doesn't
+    collapse it) as "configured" content, rendering it verbatim instead of
+    falling back to the built-in default — `strip_tags()` does not decode
+    HTML entities and `trim()` does not strip a decoded non-breaking space
+    either. Fixed by decoding entities and stripping U+00A0 before the
+    blank check.
+  - `classes/form/template_form.php` + `templates.php` (gated on
+    `mod/confcheckin:managetemplates`): one TinyMCE `editor` element per
+    template type, pre-filled with the built-in fallback content until an
+    organiser saves their own.
+  - `badge.php` (single-ticket download) and `badges.php` (bulk ZIP,
+    gated on `mod/confcheckin:downloadbadges`, `RISK_PERSONAL`): a
+    ticket's own holder can always download it; no receipt is offered for a
+    free/promo-origin ticket (nothing was paid, matching Phase 4.3's "no
+    receipt generated for free tickets" decision) — enforced in both the
+    single-ticket and bulk paths, not just hidden client-side. A deleted
+    user's ticket, or one whose ticket type was itself later deleted, is
+    silently skipped in the bulk ZIP rather than failing the whole download.
+  - `purchase.php`'s "Your tickets" table and `view.php` now link to these
+    new screens/downloads.
+  - 52/52 PHPUnit passing (was 42), phpcs/moodlecheck clean. Independently
+    verified live via a CLI harness (no browser tool available this
+    session): placeholder substitution, QR-per-token uniqueness, default and
+    organiser-customised template rendering, and real PDF byte output
+    (`%PDF` magic bytes) for every template type, using a real issued ticket
+    on this checkout.

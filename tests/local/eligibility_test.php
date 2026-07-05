@@ -214,4 +214,31 @@ final class eligibility_test extends advanced_testcase {
 
         $this->assertFalse(eligibility::is_presenter((int) $user->id, 999999));
     }
+
+    /**
+     * find_presenter_submission() returns the actual accepted submission record (not
+     * just true/false) for an eligible presenter -- consumed by
+     * classes/local/placeholder.php's {{submissiontitle}}/{{track}} template
+     * placeholders -- and null for anyone is_presenter() would also say false for.
+     */
+    public function test_find_presenter_submission_returns_the_submission(): void {
+        $this->resetAfterTest();
+
+        [$confsubmissions, $confprogram, $confprogramcmid] = $this->create_program_fixture();
+        $presenter = $this->getDataGenerator()->create_user();
+        $bystander = $this->getDataGenerator()->create_user();
+
+        $submissionid = $this->create_submission_with_speakers(
+            $confsubmissions,
+            [['userid' => $presenter->id]],
+            $confprogram
+        );
+
+        $found = eligibility::find_presenter_submission((int) $presenter->id, $confprogramcmid);
+        $this->assertNotNull($found);
+        $this->assertSame($submissionid, (int) $found->id);
+        $this->assertSame('Test Talk', $found->title);
+
+        $this->assertNull(eligibility::find_presenter_submission((int) $bystander->id, $confprogramcmid));
+    }
 }

@@ -60,10 +60,26 @@ class eligibility {
      * @return bool
      */
     public static function is_presenter(int $userid, ?int $confprogramcmid): bool {
+        return self::find_presenter_submission($userid, $confprogramcmid) !== null;
+    }
+
+    /**
+     * Returns the first accept-decided submission (in the linked mod_confprogram
+     * instance) a user is a speaker on, or null if none -- the same underlying check
+     * as is_presenter(), but returning the submission itself so callers needing more
+     * than a yes/no answer (e.g. classes/local/placeholder.php's
+     * {{submissiontitle}}/{{track}} template placeholders) do not have to duplicate
+     * this lookup.
+     *
+     * @param int $userid The user id to check
+     * @param int|null $confprogramcmid The confcheckin instance's confprogramcmid setting (nullable)
+     * @return \stdClass|null The submission record, or null if the user is not an eligible presenter
+     */
+    public static function find_presenter_submission(int $userid, ?int $confprogramcmid): ?\stdClass {
         if (empty($confprogramcmid)) {
             // No linked mod_confprogram instance: presenteronly ticket types are
             // simply never eligible for anyone, per this plugin's README.md.
-            return false;
+            return null;
         }
 
         global $DB;
@@ -72,12 +88,12 @@ class eligibility {
         if (!$confprogramcm) {
             // Stale link (the mod_confprogram course module was deleted). Degrade
             // gracefully rather than fatal -- see this class's docblock.
-            return false;
+            return null;
         }
 
         $confprogram = $DB->get_record('confprogram', ['id' => $confprogramcm->instance]);
         if (!$confprogram) {
-            return false;
+            return null;
         }
 
         $confsubmissionscm = get_coursemodule_from_id(
@@ -88,7 +104,7 @@ class eligibility {
             IGNORE_MISSING
         );
         if (!$confsubmissionscm) {
-            return false;
+            return null;
         }
 
         $accepted = \mod_confprogram\local\display_list::get_accepted_submissions(
@@ -102,11 +118,11 @@ class eligibility {
                 // A manually-entered co-presenter (userid null) never matches: there is
                 // no Moodle account to check eligibility for.
                 if (!empty($speaker->userid) && (int) $speaker->userid === $userid) {
-                    return true;
+                    return $submission;
                 }
             }
         }
 
-        return false;
+        return null;
     }
 }

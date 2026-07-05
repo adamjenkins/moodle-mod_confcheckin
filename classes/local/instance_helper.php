@@ -60,6 +60,28 @@ class instance_helper {
     }
 
     /**
+     * Validates login/context/capability for a confcheckin cmid and requires
+     * mod/confcheckin:managetemplates.
+     *
+     * @param int $cmid The confcheckin course-module id
+     * @return array{0: \stdClass, 1: \stdClass, 2: \context_module, 3: \stdClass} [$course, $cm, $context, $confcheckin]
+     */
+    public static function require_managetemplates(int $cmid): array {
+        return self::require_capability_chain($cmid, 'mod/confcheckin:managetemplates');
+    }
+
+    /**
+     * Validates login/context/capability for a confcheckin cmid and requires
+     * mod/confcheckin:downloadbadges.
+     *
+     * @param int $cmid The confcheckin course-module id
+     * @return array{0: \stdClass, 1: \stdClass, 2: \context_module, 3: \stdClass} [$course, $cm, $context, $confcheckin]
+     */
+    public static function require_downloadbadges(int $cmid): array {
+        return self::require_capability_chain($cmid, 'mod/confcheckin:downloadbadges');
+    }
+
+    /**
      * Common course/cm/context/capability/instance lookup shared by the require_*()
      * helpers above.
      *

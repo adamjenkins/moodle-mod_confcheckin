@@ -78,6 +78,20 @@ if (has_capability('mod/confcheckin:managetickettypes', $context)) {
         get_string('managepromocodes', 'confcheckin')
     );
 }
+if (has_capability('mod/confcheckin:managetemplates', $context)) {
+    $links[] = html_writer::link(
+        new moodle_url('/mod/confcheckin/templates.php', ['id' => $cm->id]),
+        get_string('managetemplates', 'confcheckin')
+    );
+}
+if (has_capability('mod/confcheckin:downloadbadges', $context)) {
+    foreach (['badge', 'ticket', 'receipt'] as $type) {
+        $links[] = html_writer::link(
+            new moodle_url('/mod/confcheckin/badges.php', ['id' => $cm->id, 'type' => $type]),
+            get_string('downloadall', 'confcheckin', get_string($type, 'confcheckin'))
+        );
+    }
+}
 
 if ($links) {
     echo html_writer::alist($links);
@@ -85,6 +99,6 @@ if ($links) {
     echo $OUTPUT->notification(get_string('scaffoldnotice', 'confcheckin'), 'info');
 }
 
-echo $OUTPUT->notification(get_string('scaffoldnoticebadges', 'confcheckin'), 'info');
+echo $OUTPUT->notification(get_string('scaffoldnoticecheckin', 'confcheckin'), 'info');
 
 echo $OUTPUT->footer();

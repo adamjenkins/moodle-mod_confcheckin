@@ -123,13 +123,28 @@ if ($mytickets) {
         get_string('tickettypename', 'confcheckin'),
         get_string('origin', 'confcheckin'),
         get_string('purchased', 'confcheckin'),
+        '',
     ];
     $mytable->attributes['class'] = 'generaltable';
     foreach ($mytickets as $ticket) {
+        $downloadtypes = ['badge', 'ticket'];
+        if ($ticket->origin === 'purchase') {
+            // No receipt for free/promo tickets -- Phase 4.3 decision, see badge.php.
+            $downloadtypes[] = 'receipt';
+        }
+        $downloadlinks = [];
+        foreach ($downloadtypes as $type) {
+            $downloadlinks[] = html_writer::link(
+                new moodle_url('/mod/confcheckin/badge.php', ['id' => $cm->id, 'ticketid' => $ticket->id, 'type' => $type]),
+                get_string($type, 'confcheckin')
+            );
+        }
+
         $mytable->data[] = [
             format_string($tickettypenames[$ticket->tickettypeid] ?? '?'),
             get_string('origin:' . $ticket->origin, 'confcheckin'),
             userdate($ticket->timecreated),
+            implode(' | ', $downloadlinks),
         ];
     }
     echo html_writer::table($mytable);
