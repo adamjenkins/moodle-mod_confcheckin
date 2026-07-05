@@ -15,18 +15,22 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Single-ticket badge/ticket/receipt PDF download for mod_confcheckin (Phase 4.4).
+ * Single-ticket badge/ticket/receipt/certificate PDF download for mod_confcheckin
+ * (Phase 4.4; certificate added Phase 4.5).
  *
- * Certificate download is deliberately NOT one of the types offered here -- it is
- * gated on a recorded check-in (Phase 4.5), which does not exist yet on this page;
- * see certificate.php once that phase lands.
- *
- * A ticket's own holder can always download it; mod/confcheckin:downloadbadges lets
- * an organiser download ANY ticket in this instance (used by the per-attendee links
- * an organiser might follow from elsewhere, and defence-in-depth alongside the bulk
- * ZIP in badges.php). No receipt is generated for a free/promo-origin ticket --
- * matches Phase 4.3's "no receipt generated for free tickets" decision (nothing was
- * ever paid, so there is nothing to receipt).
+ * A ticket's own holder can always download their badge/ticket/receipt; a
+ * certificate additionally requires mod/confcheckin:viewowncertificate (granted to
+ * the student archetype by default, but a real, independently-revocable capability
+ * check rather than being implied by ownership alone) AND a recorded check-in --
+ * see classes/local/checkin_service.php's docblock for why a check-in is required
+ * before a certificate exists at all. mod/confcheckin:downloadbadges lets an
+ * organiser download ANY ticket's PDF in this instance (used by the per-attendee
+ * links an organiser might follow from elsewhere, and defence-in-depth alongside
+ * the bulk ZIP in badges.php); the check-in requirement for a certificate still
+ * applies to an organiser's download too, since a certificate has no meaning
+ * before a check-in exists. No receipt is generated for a free/promo-origin
+ * ticket -- matches Phase 4.3's "no receipt generated for free tickets" decision
+ * (nothing was ever paid, so there is nothing to receipt).
  *
  * @package    mod_confcheckin
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
@@ -36,6 +40,7 @@
 require_once('../../config.php');
 require_once($CFG->dirroot . '/mod/confcheckin/lib.php');
 
+use mod_confcheckin\local\checkin_service;
 use mod_confcheckin\local\pdf_generator;
 
 $id = required_param('id', PARAM_INT);
@@ -48,7 +53,7 @@ require_login($course, true, $cm);
 $context = context_module::instance($cm->id);
 $confcheckin = $DB->get_record('confcheckin', ['id' => $cm->instance], '*', MUST_EXIST);
 
-if (!in_array($type, ['badge', 'ticket', 'receipt'], true)) {
+if (!in_array($type, ['badge', 'ticket', 'receipt', 'certificate'], true)) {
     throw new \moodle_exception('error:invalidtemplatetype', 'confcheckin');
 }
 
@@ -61,7 +66,16 @@ if (!$ticket) {
 }
 
 $isowner = (int) $ticket->userid === (int) $USER->id;
-if (!$isowner) {
+if ($type === 'certificate') {
+    if ($isowner) {
+        require_capability('mod/confcheckin:viewowncertificate', $context);
+    } else {
+        require_capability('mod/confcheckin:downloadbadges', $context);
+    }
+    if (!checkin_service::has_checked_in((int) $ticket->id)) {
+        throw new \moodle_exception('error:certificatenotready', 'confcheckin');
+    }
+} else if (!$isowner) {
     require_capability('mod/confcheckin:downloadbadges', $context);
 }
 

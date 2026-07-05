@@ -1,0 +1,66 @@
+/* This file is part of Moodle - http://moodle.org/
+ *
+ * Moodle is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Moodle is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+/*
+ * Styling for scan.php's QR check-in scanner (Phase 4.5) -- see amd/src/scanner.js
+ * for the behaviour these classes back.
+ */
+
+.mod_confcheckin-scanner {
+    max-width: 30rem;
+}
+
+.mod_confcheckin-scanner-input {
+    font-size: 1.25rem;
+}
+
+.mod_confcheckin-scanner-video {
+    width: 100%;
+    max-width: 30rem;
+    margin-top: 0.5rem;
+    border-radius: 4px;
+    background: #000;
+}
+
+.mod_confcheckin-scanner-result {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    font-weight: 600;
+    min-height: 1.5em;
+}
+
+.mod_confcheckin-scanner-result-success {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.mod_confcheckin-scanner-result-warning {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.mod_confcheckin-scanner-result-error {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.mod_confcheckin-scanner-log {
+    margin-top: 1rem;
+    padding-left: 1.25rem;
+    max-height: 20rem;
+    overflow-y: auto;
+}

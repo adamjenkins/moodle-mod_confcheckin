@@ -17,10 +17,10 @@
 /**
  * Main view page for mod_confcheckin.
  *
- * Renders the activity intro plus capability-gated links into the screens Phase 4.3
- * added (ticket type/promo code management, ticket purchase). Badge/certificate
- * download and the QR scanner are still follow-up work (Phases 4.4-4.5). No general
- * "view this activity" capability exists yet -- plain course-module visibility
+ * Renders the activity intro plus capability-gated links into every screen this
+ * plugin now has (ticket type/promo code/template management, ticket purchase,
+ * bulk badge/ticket/receipt/certificate downloads, the QR scanner). No general
+ * "view this activity" capability exists -- plain course-module visibility
  * (require_login()) gates the page itself, and each link below is only shown to a
  * user who actually holds the capability the target page requires.
  *
@@ -85,12 +85,18 @@ if (has_capability('mod/confcheckin:managetemplates', $context)) {
     );
 }
 if (has_capability('mod/confcheckin:downloadbadges', $context)) {
-    foreach (['badge', 'ticket', 'receipt'] as $type) {
+    foreach (['badge', 'ticket', 'receipt', 'certificate'] as $type) {
         $links[] = html_writer::link(
             new moodle_url('/mod/confcheckin/badges.php', ['id' => $cm->id, 'type' => $type]),
             get_string('downloadall', 'confcheckin', get_string($type, 'confcheckin'))
         );
     }
+}
+if (has_capability('mod/confcheckin:scancheckin', $context)) {
+    $links[] = html_writer::link(
+        new moodle_url('/mod/confcheckin/scan.php', ['id' => $cm->id]),
+        get_string('scancheckin', 'confcheckin')
+    );
 }
 
 if ($links) {
@@ -98,7 +104,5 @@ if ($links) {
 } else {
     echo $OUTPUT->notification(get_string('scaffoldnotice', 'confcheckin'), 'info');
 }
-
-echo $OUTPUT->notification(get_string('scaffoldnoticecheckin', 'confcheckin'), 'info');
 
 echo $OUTPUT->footer();

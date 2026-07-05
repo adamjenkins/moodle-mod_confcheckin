@@ -40,6 +40,7 @@
 require_once('../../config.php');
 require_once($CFG->dirroot . '/mod/confcheckin/lib.php');
 
+use mod_confcheckin\local\checkin_service;
 use mod_confcheckin\local\eligibility;
 use mod_confcheckin\local\instance_helper;
 use mod_confcheckin\local\ticket_service;
@@ -117,12 +118,14 @@ $mytickets = $DB->get_records(
 );
 if ($mytickets) {
     $tickettypenames = $DB->get_records_menu('confcheckin_tickettype', ['confcheckin' => $confcheckin->id], '', 'id, name');
+    $canviewowncertificate = has_capability('mod/confcheckin:viewowncertificate', $context);
     echo $OUTPUT->heading(get_string('mytickets', 'confcheckin'), 4);
     $mytable = new html_table();
     $mytable->head = [
         get_string('tickettypename', 'confcheckin'),
         get_string('origin', 'confcheckin'),
         get_string('purchased', 'confcheckin'),
+        get_string('checkedin', 'confcheckin'),
         '',
     ];
     $mytable->attributes['class'] = 'generaltable';
@@ -131,6 +134,10 @@ if ($mytickets) {
         if ($ticket->origin === 'purchase') {
             // No receipt for free/promo tickets -- Phase 4.3 decision, see badge.php.
             $downloadtypes[] = 'receipt';
+        }
+        $ischeckedin = checkin_service::has_checked_in((int) $ticket->id);
+        if ($ischeckedin && $canviewowncertificate) {
+            $downloadtypes[] = 'certificate';
         }
         $downloadlinks = [];
         foreach ($downloadtypes as $type) {
@@ -144,6 +151,7 @@ if ($mytickets) {
             format_string($tickettypenames[$ticket->tickettypeid] ?? '?'),
             get_string('origin:' . $ticket->origin, 'confcheckin'),
             userdate($ticket->timecreated),
+            $ischeckedin ? get_string('checkedin', 'confcheckin') : '-',
             implode(' | ', $downloadlinks),
         ];
     }

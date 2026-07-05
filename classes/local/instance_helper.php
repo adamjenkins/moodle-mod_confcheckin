@@ -18,19 +18,21 @@ namespace mod_confcheckin\local;
 
 /**
  * Shared context/capability/instance-scoping helpers for this plugin's entry-point
- * pages (tickettypes.php, promocodes.php, purchase.php, view.php).
+ * pages (tickettypes.php, promocodes.php, purchase.php, view.php, scan.php).
  *
  * This is the plain-page equivalent of mod_confscheduler's
  * classes/external/scheduler_context_trait.php (that one is written as a trait for
- * classes extending \core_external\external_api; this plugin has no AJAX external
- * functions yet, so a plain static-method class is used instead). The load-bearing
- * property is the same: every write/read entry point in this project re-derives the
- * cm/context/instance from a cmid and requires the matching capability BEFORE trusting
- * any other caller-supplied id, and every "does this id belong to this instance"
- * lookup below throws the SAME exception/message regardless of whether the id simply
- * doesn't exist or exists but belongs to a different confcheckin instance -- this
- * avoids an enumeration oracle, matching the pattern documented in the coordination
- * repo's RELATIONS.md.
+ * classes extending \core_external\external_api; this class is a plain static-method
+ * class instead, since it backs whole pages rather than AJAX external functions --
+ * see classes/external/record_checkin.php for this plugin's own AJAX-side
+ * equivalent, added Phase 4.5). The load-bearing property is the same: every
+ * write/read entry point in this project re-derives the cm/context/instance from a
+ * cmid and requires the matching capability BEFORE trusting any other
+ * caller-supplied id, and every "does this id belong to this instance" lookup below
+ * throws the SAME exception/message regardless of whether the id simply doesn't
+ * exist or exists but belongs to a different confcheckin instance -- this avoids an
+ * enumeration oracle, matching the pattern documented in the coordination repo's
+ * RELATIONS.md.
  *
  * @package    mod_confcheckin
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
@@ -79,6 +81,17 @@ class instance_helper {
      */
     public static function require_downloadbadges(int $cmid): array {
         return self::require_capability_chain($cmid, 'mod/confcheckin:downloadbadges');
+    }
+
+    /**
+     * Validates login/context/capability for a confcheckin cmid and requires
+     * mod/confcheckin:scancheckin.
+     *
+     * @param int $cmid The confcheckin course-module id
+     * @return array{0: \stdClass, 1: \stdClass, 2: \context_module, 3: \stdClass} [$course, $cm, $context, $confcheckin]
+     */
+    public static function require_scancheckin(int $cmid): array {
+        return self::require_capability_chain($cmid, 'mod/confcheckin:scancheckin');
     }
 
     /**

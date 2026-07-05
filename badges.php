@@ -15,12 +15,15 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Bulk badge/ticket/receipt PDF download (ZIP of every issued ticket in this
- * instance) for mod_confcheckin (Phase 4.4), gated on mod/confcheckin:downloadbadges
- * (RISK_PERSONAL -- see db/access.php).
+ * Bulk badge/ticket/receipt/certificate PDF download (ZIP of every issued ticket
+ * in this instance) for mod_confcheckin (Phase 4.4; certificate added Phase 4.5),
+ * gated on mod/confcheckin:downloadbadges (RISK_PERSONAL -- see db/access.php).
  *
  * A deleted user's ticket is silently skipped (there is no profile data left to
- * render), rather than failing the whole download.
+ * render), rather than failing the whole download. A certificate bulk download
+ * only ever includes tickets with a recorded check-in -- see
+ * classes/local/checkin_service.php's docblock for why a certificate has no
+ * meaning before then.
  *
  * @package    mod_confcheckin
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
@@ -30,6 +33,7 @@
 require_once('../../config.php');
 require_once($CFG->dirroot . '/mod/confcheckin/lib.php');
 
+use mod_confcheckin\local\checkin_service;
 use mod_confcheckin\local\instance_helper;
 use mod_confcheckin\local\pdf_generator;
 
@@ -40,7 +44,7 @@ require_login();
 
 [$course, $cm, $context, $confcheckin] = instance_helper::require_downloadbadges($id);
 
-if (!in_array($type, ['badge', 'ticket', 'receipt'], true)) {
+if (!in_array($type, ['badge', 'ticket', 'receipt', 'certificate'], true)) {
     throw new \moodle_exception('error:invalidtemplatetype', 'confcheckin');
 }
 
@@ -50,6 +54,11 @@ $tickets = $DB->get_records('confcheckin_ticket', ['confcheckin' => $confcheckin
 if ($type === 'receipt') {
     // No receipt for free/promo tickets -- Phase 4.3 decision, see badge.php.
     $tickets = array_filter($tickets, static fn (\stdClass $ticket): bool => $ticket->origin === 'purchase');
+} else if ($type === 'certificate') {
+    $tickets = array_filter(
+        $tickets,
+        static fn (\stdClass $ticket): bool => checkin_service::has_checked_in((int) $ticket->id)
+    );
 }
 if (!$tickets) {
     redirect($viewurl, get_string('notickets', 'confcheckin'), null, \core\output\notification::NOTIFY_INFO);
