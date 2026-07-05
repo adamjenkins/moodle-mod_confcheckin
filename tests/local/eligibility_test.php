@@ -241,4 +241,46 @@ final class eligibility_test extends advanced_testcase {
 
         $this->assertNull(eligibility::find_presenter_submission((int) $bystander->id, $confprogramcmid));
     }
+
+    /**
+     * find_presenter_submissions() returns EVERY accepted submission a user speaks
+     * on, not just the first -- consumed by classes/local/placeholder.php's
+     * {{presentationinfo}} placeholder to list all of a presenter's presentations.
+     * find_presenter_submission() (singular) still only ever returns the first of
+     * these, unaffected by there being more than one.
+     */
+    public function test_find_presenter_submissions_returns_every_accepted_submission(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        [$confsubmissions, $confprogram, $confprogramcmid] = $this->create_program_fixture();
+        $presenter = $this->getDataGenerator()->create_user();
+
+        $firstid = $this->create_submission_with_speakers(
+            $confsubmissions,
+            [['userid' => $presenter->id]],
+            $confprogram
+        );
+
+        $secondid = (int) $DB->insert_record('confsubmissions_submission', (object) [
+            'confsubmissions' => $confsubmissions->id,
+            'userid'          => $this->getDataGenerator()->create_user()->id,
+            'title'           => 'Second Talk',
+            'abstract'        => 'Another abstract.',
+            'status'          => 'submitted',
+            'timecreated'     => time(),
+            'timemodified'    => time(),
+        ]);
+        \mod_confsubmissions\api::sync_speakers($secondid, [['userid' => $presenter->id]]);
+        $decider = $this->getDataGenerator()->create_user();
+        \mod_confprogram\api::record_decision((int) $confprogram->id, $secondid, 'accept', 1, (int) $decider->id);
+
+        $found = eligibility::find_presenter_submissions((int) $presenter->id, $confprogramcmid);
+        $this->assertCount(2, $found);
+        $this->assertSame([$firstid, $secondid], array_map(static fn ($s) => (int) $s->id, $found));
+
+        // The singular lookup still only ever returns the first.
+        $single = eligibility::find_presenter_submission((int) $presenter->id, $confprogramcmid);
+        $this->assertSame($firstid, (int) $single->id);
+    }
 }

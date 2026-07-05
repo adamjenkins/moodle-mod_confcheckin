@@ -66,6 +66,21 @@ class template_form extends \moodleform {
         $mform->setType('content', PARAM_RAW);
         $mform->addHelpButton('content', 'templatecontent', 'confcheckin');
 
+        // A "template within a template" (user feedback, 2026-07-05): this
+        // template type's own mini format, applied once per accepted submission a
+        // ticket holder presents to build the [[presentationinfo]] placeholder
+        // above -- see classes/local/placeholder.php::render_presentationinfo().
+        // Plain textarea, not TinyMCE: it is meant to hold a short HTML-ish
+        // snippet (e.g. "<strong>{title}</strong> ({track})"), not a full document.
+        $mform->addElement(
+            'textarea',
+            'presentationinfoformat',
+            get_string('presentationinfoformat', 'confcheckin'),
+            ['rows' => 3, 'cols' => 60]
+        );
+        $mform->setType('presentationinfoformat', PARAM_RAW);
+        $mform->addHelpButton('presentationinfoformat', 'presentationinfoformat', 'confcheckin');
+
         $this->add_action_buttons();
     }
 }

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="mod/confcheckin/db" VERSION="2026070503" COMMENT="XMLDB file for Moodle mod/confcheckin"
+<XMLDB PATH="mod/confcheckin/db" VERSION="2026070504" COMMENT="XMLDB file for Moodle mod/confcheckin"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
   <TABLES>
@@ -89,6 +89,7 @@
         <FIELD NAME="templatetype" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" COMMENT="One of badge, ticket, receipt or certificate; enforced in PHP"/>
         <FIELD NAME="content" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="TinyMCE-authored HTML with embeddable placeholder fields (e.g. {{fullname}}, {{tickettype}}); placeholder rendering itself is implemented in a later phase"/>
         <FIELD NAME="contentformat" TYPE="int" LENGTH="4" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Standard Moodle text-format field for the content column, same type/length/default convention as this plugin's own introformat field (no existing rich-text field with its own format column exists yet in the sibling plugins' shipped schemas to match instead)"/>
+        <FIELD NAME="presentationinfoformat" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="A mini per-presentation format string (its own small fixed placeholder syntax, e.g. {title}/{track} -- deliberately NOT the sitewide [[ ]] delimiter, to avoid confusing the two nesting levels) rendered once per accepted submission a ticket holder presents and joined with a line break to build the [[presentationinfo]] placeholder for this template type. Null/blank falls back to a built-in default (just {title}) -- see classes/local/placeholder.php"/>
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
         <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
       </FIELDS>

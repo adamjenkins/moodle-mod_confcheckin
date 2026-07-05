@@ -65,21 +65,34 @@ class eligibility {
 
     /**
      * Returns the first accept-decided submission (in the linked mod_confprogram
-     * instance) a user is a speaker on, or null if none -- the same underlying check
-     * as is_presenter(), but returning the submission itself so callers needing more
-     * than a yes/no answer (e.g. classes/local/placeholder.php's
-     * {{submissiontitle}}/{{track}} template placeholders) do not have to duplicate
-     * this lookup.
+     * instance) a user is a speaker on, or null if none -- a thin convenience
+     * wrapper around find_presenter_submissions() for callers needing only a
+     * single-value answer (is_presenter(), and classes/local/placeholder.php's
+     * older single-submission {{submissiontitle}}/{{track}} placeholders).
      *
      * @param int $userid The user id to check
      * @param int|null $confprogramcmid The confcheckin instance's confprogramcmid setting (nullable)
      * @return \stdClass|null The submission record, or null if the user is not an eligible presenter
      */
     public static function find_presenter_submission(int $userid, ?int $confprogramcmid): ?\stdClass {
+        return self::find_presenter_submissions($userid, $confprogramcmid)[0] ?? null;
+    }
+
+    /**
+     * Returns every accept-decided submission (in the linked mod_confprogram
+     * instance) a user is a speaker on, in the program's own accepted-submissions
+     * order -- used by classes/local/placeholder.php's {{presentationinfo}}
+     * placeholder to list ALL of a presenter's presentations, not just one.
+     *
+     * @param int $userid The user id to check
+     * @param int|null $confprogramcmid The confcheckin instance's confprogramcmid setting (nullable)
+     * @return \stdClass[] The submission records the user speaks on; empty if none or not eligible
+     */
+    public static function find_presenter_submissions(int $userid, ?int $confprogramcmid): array {
         if (empty($confprogramcmid)) {
             // No linked mod_confprogram instance: presenteronly ticket types are
             // simply never eligible for anyone, per this plugin's README.md.
-            return null;
+            return [];
         }
 
         global $DB;
@@ -88,12 +101,12 @@ class eligibility {
         if (!$confprogramcm) {
             // Stale link (the mod_confprogram course module was deleted). Degrade
             // gracefully rather than fatal -- see this class's docblock.
-            return null;
+            return [];
         }
 
         $confprogram = $DB->get_record('confprogram', ['id' => $confprogramcm->instance]);
         if (!$confprogram) {
-            return null;
+            return [];
         }
 
         $confsubmissionscm = get_coursemodule_from_id(
@@ -104,7 +117,7 @@ class eligibility {
             IGNORE_MISSING
         );
         if (!$confsubmissionscm) {
-            return null;
+            return [];
         }
 
         $accepted = \mod_confprogram\local\display_list::get_accepted_submissions(
@@ -112,17 +125,19 @@ class eligibility {
             (int) $confsubmissionscm->instance
         );
 
+        $result = [];
         foreach ($accepted as $submission) {
             $speakers = \mod_confsubmissions\api::get_speakers((int) $submission->id);
             foreach ($speakers as $speaker) {
                 // A manually-entered co-presenter (userid null) never matches: there is
                 // no Moodle account to check eligibility for.
                 if (!empty($speaker->userid) && (int) $speaker->userid === $userid) {
-                    return $submission;
+                    $result[] = $submission;
+                    break;
                 }
             }
         }
 
-        return null;
+        return $result;
     }
 }

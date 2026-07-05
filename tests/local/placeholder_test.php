@@ -109,12 +109,13 @@ final class placeholder_test extends advanced_testcase {
         $this->resetAfterTest();
 
         $course = $this->getDataGenerator()->create_course();
-        $confcheckin = (object) ['name' => 'My Conf', 'course' => $course->id];
+        // A confprogramcmid-less confcheckin (unset here) means build_context() never
+        // actually looks up a presenter submission, but it still reads $confcheckin->id
+        // (to look up this template type's own presentationinfoformat) and $user->id
+        // (as part of that no-op eligibility check), so a hand-built stub needs both.
+        $confcheckin = (object) ['id' => 0, 'name' => 'My Conf', 'course' => $course->id];
         $tickettype = (object) ['name' => 'General'];
         $ticket = (object) ['origin' => 'free', 'qrtoken' => 'abc123'];
-        // A confprogramcmid-less confcheckin (unset here) means build_context() never
-        // actually looks up a presenter submission, but it does read $user->id as part
-        // of that no-op check, so a hand-built stub still needs one.
         $user = (object) ['id' => 0, 'firstname' => 'A & B', 'lastname' => 'Ltd', 'email' => 'a@b.com'];
         // Moodle's fullname() needs firstnamephonetic/etc fields to be at least set
         // (unset ok, treated as empty) -- also alternatename/middlename.
@@ -123,7 +124,7 @@ final class placeholder_test extends advanced_testcase {
         $user->middlename = '';
         $user->alternatename = '';
 
-        $context = placeholder::build_context($confcheckin, $tickettype, $ticket, $user);
+        $context = placeholder::build_context($confcheckin, $tickettype, $ticket, $user, 'badge');
 
         $this->assertStringContainsString('&amp;', $context['fullname']);
         $this->assertStringNotContainsString('A & B', $context['fullname']);
@@ -137,12 +138,12 @@ final class placeholder_test extends advanced_testcase {
         $this->resetAfterTest();
 
         $course = $this->getDataGenerator()->create_course(['fullname' => 'My Course', 'shortname' => 'MC101']);
-        $confcheckin = (object) ['name' => 'My Conf', 'course' => $course->id];
+        $confcheckin = (object) ['id' => 0, 'name' => 'My Conf', 'course' => $course->id];
         $tickettype = (object) ['name' => 'General'];
         $ticket = (object) ['origin' => 'free', 'qrtoken' => 'abc123'];
         $user = $this->getDataGenerator()->create_user();
 
-        $context = placeholder::build_context($confcheckin, $tickettype, $ticket, $user);
+        $context = placeholder::build_context($confcheckin, $tickettype, $ticket, $user, 'badge');
 
         $this->assertSame('My Course', $context['coursefullname']);
         $this->assertSame('MC101', $context['courseshortname']);
@@ -218,14 +219,111 @@ final class placeholder_test extends advanced_testcase {
         $tickettype = $DB->get_record('confcheckin_tickettype', ['id' => $tickettypeid], '*', MUST_EXIST);
 
         $presenterticket = ticket_service::issue_free_ticket((int) $confcheckin->id, $tickettypeid, (int) $presenter->id);
-        $context = placeholder::build_context($confcheckin, $tickettype, $presenterticket, $presenter);
+        $context = placeholder::build_context($confcheckin, $tickettype, $presenterticket, $presenter, 'badge');
         $this->assertSame('My Great Talk', $context['submissiontitle']);
         $this->assertSame('Security', $context['track']);
+        // Default presentationinfo format is just the title (see
+        // placeholder::DEFAULT_PRESENTATIONINFO_FORMAT's docblock for why track is
+        // deliberately excluded from the default).
+        $this->assertSame('My Great Talk', $context['presentationinfo']);
 
         $bystander = $this->getDataGenerator()->create_user();
         $bystanderticket = ticket_service::issue_free_ticket((int) $confcheckin->id, $tickettypeid, (int) $bystander->id);
-        $bystandercontext = placeholder::build_context($confcheckin, $tickettype, $bystanderticket, $bystander);
+        $bystandercontext = placeholder::build_context($confcheckin, $tickettype, $bystanderticket, $bystander, 'badge');
         $this->assertSame('', $bystandercontext['submissiontitle']);
         $this->assertSame('', $bystandercontext['track']);
+        $this->assertSame('', $bystandercontext['presentationinfo']);
+    }
+
+    /**
+     * {{presentationinfo}} lists EVERY accepted submission a presenter speaks on
+     * (unlike {{submissiontitle}}/{{track}}, which only ever cover the first),
+     * each rendered through this template TYPE's own configured
+     * confcheckin_template.presentationinfoformat and joined with a line break.
+     */
+    public function test_build_context_presentationinfo_lists_every_presentation(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $course = $this->getDataGenerator()->create_course();
+        $confsubmissions = $this->getDataGenerator()->create_module('confsubmissions', ['course' => $course->id]);
+        $confsubmissionscm = get_coursemodule_from_instance('confsubmissions', $confsubmissions->id);
+        $trackid = \mod_confsubmissions\api::add_track((int) $confsubmissions->id, 'Security');
+
+        $confprogram = $this->getDataGenerator()->create_module('confprogram', [
+            'course'              => $course->id,
+            'confsubmissionscmid' => $confsubmissionscm->id,
+        ]);
+        $confprogramcm = get_coursemodule_from_instance('confprogram', $confprogram->id);
+
+        $confcheckin = $this->getDataGenerator()->create_module('confcheckin', [
+            'course'          => $course->id,
+            'confprogramcmid' => $confprogramcm->id,
+        ]);
+
+        $presenter = $this->getDataGenerator()->create_user();
+        $decider = $this->getDataGenerator()->create_user();
+
+        $firstid = (int) $DB->insert_record('confsubmissions_submission', (object) [
+            'confsubmissions' => $confsubmissions->id,
+            'userid'          => $presenter->id,
+            'title'           => 'First Talk',
+            'abstract'        => 'An abstract.',
+            'trackid'         => $trackid,
+            'status'          => 'submitted',
+            'timecreated'     => time(),
+            'timemodified'    => time(),
+        ]);
+        \mod_confsubmissions\api::sync_speakers($firstid, [['userid' => $presenter->id]]);
+        \mod_confprogram\api::record_decision((int) $confprogram->id, $firstid, 'accept', 1, (int) $decider->id);
+
+        $secondid = (int) $DB->insert_record('confsubmissions_submission', (object) [
+            'confsubmissions' => $confsubmissions->id,
+            'userid'          => $presenter->id,
+            'title'           => 'Second Talk',
+            'abstract'        => 'Another abstract.',
+            'status'          => 'submitted',
+            'timecreated'     => time(),
+            'timemodified'    => time(),
+        ]);
+        \mod_confsubmissions\api::sync_speakers($secondid, [['userid' => $presenter->id]]);
+        \mod_confprogram\api::record_decision((int) $confprogram->id, $secondid, 'accept', 1, (int) $decider->id);
+
+        $tickettypeid = $DB->insert_record('confcheckin_tickettype', (object) [
+            'confcheckin'  => $confcheckin->id,
+            'name'         => 'Presenter Pass',
+            'price'        => '0.00',
+            'currency'     => 'USD',
+            'sortorder'    => 0,
+            'visible'      => 1,
+            'soldcount'    => 0,
+            'timecreated'  => time(),
+            'timemodified' => time(),
+        ]);
+        $tickettype = $DB->get_record('confcheckin_tickettype', ['id' => $tickettypeid], '*', MUST_EXIST);
+        $ticket = ticket_service::issue_free_ticket((int) $confcheckin->id, $tickettypeid, (int) $presenter->id);
+
+        // Default format (no confcheckin_template row yet): just the title, joined.
+        $context = placeholder::build_context($confcheckin, $tickettype, $ticket, $presenter, 'badge');
+        $this->assertSame('First Talk<br>Second Talk', $context['presentationinfo']);
+
+        // A configured per-type format string is applied per submission, and is
+        // specific to this one template type ('badge') -- a different type
+        // ('ticket') with no row of its own still falls back to the default.
+        $DB->insert_record('confcheckin_template', (object) [
+            'confcheckin'            => $confcheckin->id,
+            'templatetype'           => 'badge',
+            'content'                => '',
+            'contentformat'          => FORMAT_HTML,
+            'presentationinfoformat' => '{title} ({track})',
+            'timecreated'            => time(),
+            'timemodified'           => time(),
+        ]);
+
+        $badgecontext = placeholder::build_context($confcheckin, $tickettype, $ticket, $presenter, 'badge');
+        $this->assertSame('First Talk (Security)<br>Second Talk ()', $badgecontext['presentationinfo']);
+
+        $ticketcontext = placeholder::build_context($confcheckin, $tickettype, $ticket, $presenter, 'ticket');
+        $this->assertSame('First Talk<br>Second Talk', $ticketcontext['presentationinfo']);
     }
 }

@@ -83,5 +83,21 @@ function xmldb_confcheckin_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026070503, 'confcheckin');
     }
 
+    if ($oldversion < 2026070504) {
+        // Unified [[presentationinfo]] placeholder (user feedback, 2026-07-05): lists
+        // every accepted submission a ticket holder presents, rendered once per
+        // submission via a per-template-type "template within a template" format
+        // string, instead of the older single-submission {{submissiontitle}}/{{track}}
+        // pair (both kept for backwards compatibility -- see README.md).
+        $table = new xmldb_table('confcheckin_template');
+
+        $field = new xmldb_field('presentationinfoformat', XMLDB_TYPE_TEXT, null, null, null, null, null, 'contentformat');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026070504, 'confcheckin');
+    }
+
     return true;
 }

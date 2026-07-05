@@ -66,11 +66,12 @@ $existing = $DB->get_record('confcheckin_template', [
 $form = new template_form($pageurl, ['templatetype' => $templatetype, 'context' => $context]);
 
 $form->set_data((object) [
-    'templatetype' => $templatetype,
-    'content'      => [
+    'templatetype'           => $templatetype,
+    'content'                => [
         'text'   => $existing->content ?? pdf_generator::default_template($templatetype),
         'format' => $existing->contentformat ?? FORMAT_HTML,
     ],
+    'presentationinfoformat' => $existing->presentationinfoformat ?? '',
 ]);
 
 if ($form->is_cancelled()) {
@@ -78,11 +79,12 @@ if ($form->is_cancelled()) {
 } else if ($data = $form->get_data()) {
     $now = time();
     $record = (object) [
-        'confcheckin'   => $confcheckin->id,
-        'templatetype'  => $templatetype,
-        'content'       => $data->content['text'],
-        'contentformat' => $data->content['format'],
-        'timemodified'  => $now,
+        'confcheckin'            => $confcheckin->id,
+        'templatetype'           => $templatetype,
+        'content'                => $data->content['text'],
+        'contentformat'          => $data->content['format'],
+        'presentationinfoformat' => $data->presentationinfoformat,
+        'timemodified'           => $now,
     ];
 
     if ($existing) {
@@ -118,7 +120,10 @@ echo html_writer::tag('p', implode(' | ', $tablinks));
 // shows whichever delimiter pair is CURRENTLY configured (see settings.php).
 $placeholdernames = ['fullname', 'email', 'tickettype', 'confcheckinname', 'coursefullname', 'courseshortname', 'origin', 'qrcode'];
 $placeholderlist = implode(', ', array_map([placeholder::class, 'wrap'], $placeholdernames));
-$presenterplaceholderlist = implode(', ', array_map([placeholder::class, 'wrap'], ['submissiontitle', 'track']));
+$presenterplaceholderlist = implode(
+    ', ',
+    array_map([placeholder::class, 'wrap'], ['presentationinfo', 'submissiontitle', 'track'])
+);
 echo $OUTPUT->notification(
     get_string('templateplaceholders', 'confcheckin', (object) [
         'placeholders' => $placeholderlist,

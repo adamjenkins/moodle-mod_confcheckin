@@ -141,7 +141,7 @@ class pdf_generator {
         require_once($CFG->libdir . '/pdflib.php');
 
         $content = self::get_template_content((int) $confcheckin->id, $templatetype);
-        $context = placeholder::build_context($confcheckin, $tickettype, $ticket, $user);
+        $context = placeholder::build_context($confcheckin, $tickettype, $ticket, $user, $templatetype);
         $html = placeholder::render($content, $context);
 
         $pdf = new \pdf();

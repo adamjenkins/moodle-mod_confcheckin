@@ -331,4 +331,36 @@
     validation preventing a degenerate delimiter configuration) was left as
     documented, non-blocking UX polish — not a security issue, since
     `preg_quote()` is already applied before any regex is built from it.
+- User feedback (2026-07-05): "the templates should have a single field for
+  presenters called `[[presentationinfo]]`. This field should list all the
+  presentations a presenter is presenting. What information is included
+  should be configurable as a setting on the template editing page (sort of a
+  template within a template)." Added the `[[presentationinfo]]` placeholder,
+  listing EVERY accepted submission the ticket holder presents (unlike the
+  existing `[[submissiontitle]]`/`[[track]]`, which only ever covered the
+  first — both kept, unchanged, for backwards compatibility with
+  already-authored templates). `classes/local/eligibility.php` gained
+  `find_presenter_submissions()` (plural), returning all matches;
+  `find_presenter_submission()` (singular) is now a thin wrapper around it.
+  Each template TYPE (badge/ticket/receipt/certificate) has its own
+  configurable per-presentation mini format string
+  (`confcheckin_template.presentationinfoformat`, a new nullable text column,
+  editable via a new "Presentation info format" textarea on `templates.php`'s
+  form) — a genuine "template within a template": every accepted submission
+  is run through it and the results joined with a line break. The mini format
+  has its own small, fixed placeholder syntax (`{title}`/`{track}`,
+  deliberately single-braced and NOT the sitewide `[[ ]]`/configured
+  delimiter, so the two nesting levels can never be confused or collide) --
+  see `classes/local/placeholder.php::render_presentationinfo()`. Left unset,
+  a template type falls back to a built-in default of just `{title}` (not
+  `{title} ({track})`, which would show an ugly empty `()` for the common
+  case of a submission with no track). New tests:
+  `eligibility_test::test_find_presenter_submissions_returns_every_accepted_submission()`,
+  `placeholder_test::test_build_context_presentationinfo_lists_every_presentation()`
+  (default format, a custom per-type format, and confirming a DIFFERENT
+  template type with no format row of its own still falls back to the
+  default rather than inheriting another type's setting). 86/86 PHPUnit
+  passing (was 82), phpcs/moodlecheck clean, EN/JA lang parity verified
+  (153/153 keys), live-verified: the new form field renders, saves, and
+  persists correctly on reload.
   - 84/84 PHPUnit passing (was 82), phpcs/moodlecheck clean.

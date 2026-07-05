@@ -47,6 +47,16 @@ class placeholder {
     private const DEFAULT_DELIMITER_END = ']]';
 
     /**
+     * @var string Fallback per-presentation format for {{presentationinfo}}, used
+     * when a template type's confcheckin_template.presentationinfoformat is unset
+     * or blank. Deliberately just the title -- a default that also includes
+     * {track} would render an ugly trailing "()" for the common case of a
+     * submission with no track, and there is no per-mini-placeholder "omit if
+     * blank" logic (see render_presentationinfo()'s docblock).
+     */
+    private const DEFAULT_PRESENTATIONINFO_FORMAT = '{title}';
+
+    /**
      * The sitewide configured opening delimiter (e.g. `[[`), falling back to
      * DEFAULT_DELIMITER_START if the admin setting is unset or blank.
      *
@@ -107,17 +117,25 @@ class placeholder {
      * Moodle's own request cache, so calling this per-ticket (e.g. once per
      * attendee in a bulk badges.php ZIP) does not mean one real DB query each.
      *
+     * 'presentationinfo' lists EVERY accepted submission the ticket holder
+     * presents (unlike 'submissiontitle'/'track' above, which only ever cover
+     * the first) -- see render_presentationinfo()'s docblock for its own mini
+     * placeholder syntax and per-template-type configurability.
+     *
      * @param \stdClass $confcheckin The confcheckin instance record
      * @param \stdClass $tickettype The confcheckin_tickettype record
      * @param \stdClass $ticket The confcheckin_ticket record
      * @param \stdClass $user The ticket holder's user record
+     * @param string $templatetype One of \mod_confcheckin\local\pdf_generator::VALID_TYPES,
+     *        used only to look up this template type's own presentationinfoformat
      * @return array Placeholder name => replacement HTML
      */
     public static function build_context(
         \stdClass $confcheckin,
         \stdClass $tickettype,
         \stdClass $ticket,
-        \stdClass $user
+        \stdClass $user,
+        string $templatetype
     ): array {
         $course = get_course((int) $confcheckin->course);
 
@@ -134,12 +152,66 @@ class placeholder {
         ];
 
         $confprogramcmid = isset($confcheckin->confprogramcmid) ? (int) $confcheckin->confprogramcmid : null;
-        $submission = eligibility::find_presenter_submission((int) $user->id, $confprogramcmid);
+        $submissions = eligibility::find_presenter_submissions((int) $user->id, $confprogramcmid);
 
-        $context['submissiontitle'] = $submission ? format_string($submission->title) : '';
-        $context['track'] = $submission ? self::track_name($submission) : '';
+        $context['submissiontitle'] = $submissions ? format_string($submissions[0]->title) : '';
+        $context['track'] = $submissions ? self::track_name($submissions[0]) : '';
+        // Short-circuits before touching $confcheckin->id/looking up
+        // presentationinfoformat at all for the common non-presenter ticket, not
+        // just before rendering -- avoids an unnecessary confcheckin_template
+        // query for every plain attendee.
+        $context['presentationinfo'] = $submissions
+            ? self::render_presentationinfo($submissions, (int) $confcheckin->id, $templatetype)
+            : '';
 
         return $context;
+    }
+
+    /**
+     * Renders the {{presentationinfo}} placeholder: every submission in
+     * $submissions run through a per-template-type mini format string (a
+     * "template within a template" -- configured per templatetype on
+     * templates.php, stored in confcheckin_template.presentationinfoformat),
+     * joined with a line break.
+     *
+     * The mini format string has its OWN small, fixed placeholder syntax --
+     * {title}/{track} -- deliberately distinct from the sitewide [[ ]] (or
+     * whatever it's configured to) delimiter that wraps {{presentationinfo}}
+     * itself, so the two nesting levels are never visually confusable and never
+     * collide (this method's substitution runs and fully resolves before the
+     * result is ever placed into the outer context array that render() consumes).
+     * Substitution is a plain strtr() (not render()'s regex, and not gated on the
+     * sitewide delimiter): a missing {track} on a submission with no track
+     * becomes '' inline, same "drop what's not recognised/blank" philosophy as
+     * everywhere else in this class, but there is no way to also drop
+     * surrounding punctuation an organiser wrote around it -- documented, not
+     * fixed, in RECOMMENDATIONS.md.
+     *
+     * @param \stdClass[] $submissions From eligibility::find_presenter_submissions(); the
+     *        caller (build_context()) never calls this with an empty array
+     * @param int $confcheckinid The confcheckin instance id
+     * @param string $templatetype One of pdf_generator::VALID_TYPES
+     * @return string The joined, rendered HTML
+     */
+    private static function render_presentationinfo(array $submissions, int $confcheckinid, string $templatetype): string {
+        global $DB;
+        $format = $DB->get_field('confcheckin_template', 'presentationinfoformat', [
+            'confcheckin'  => $confcheckinid,
+            'templatetype' => $templatetype,
+        ]);
+        if ($format === false || trim((string) $format) === '') {
+            $format = self::DEFAULT_PRESENTATIONINFO_FORMAT;
+        }
+
+        $rendered = array_map(
+            static fn (\stdClass $submission): string => strtr((string) $format, [
+                '{title}' => format_string($submission->title),
+                '{track}' => self::track_name($submission),
+            ]),
+            $submissions
+        );
+
+        return implode('<br>', $rendered);
     }
 
     /**
