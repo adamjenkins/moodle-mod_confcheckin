@@ -364,3 +364,40 @@
   (153/153 keys), live-verified: the new form field renders, saves, and
   persists correctly on reload.
   - 84/84 PHPUnit passing (was 82), phpcs/moodlecheck clean.
+- Phase 4.6 (final cross-cutting pass): a `moodle-reviewer` pass over the
+  whole plugin, focused especially on the new `[[presentationinfo]]` feature,
+  came back APPROVE with 0 critical/high findings. One **medium** finding
+  fixed: `eligibility::find_presenter_submissions()` re-resolved the whole
+  `mod_confprogram`/`mod_confsubmissions` chain and re-queried every accepted
+  submission's speakers from scratch on every call, with no memoization --
+  for a bulk badge/ticket ZIP export (`badges.php`, one call per ticket, all
+  against the same `confprogramcmid`), this was effectively
+  O(tickets × accepted submissions) repeated identical queries within a
+  single request. Fixed by caching the resolved accepted-submissions-with-
+  speakers list per `confprogramcmid` (`eligibility::get_accepted_with_speakers()`)
+  and, similarly, `placeholder.php`'s per-(confcheckin, templatetype)
+  `presentationinfoformat` lookup (`placeholder::get_presentationinfo_format()`)
+  -- both via a `cache::MODE_REQUEST` store (the same ad-hoc,
+  no-`db/caches.php`-registration pattern `tool_usertours\local\filter\role`
+  already uses), not a plain static array, specifically so Moodle's own
+  PHPUnit test-reset machinery clears them between tests. Caching a
+  DB-backed value this way needs explicit invalidation on write: added
+  `placeholder::forget_presentationinfo_format()`, called by `templates.php`
+  immediately after saving a template, so a save-then-render within the same
+  request sees the just-saved format rather than a stale cached one --
+  caught live by `tests/local/placeholder_test.php`'s own
+  save-then-read-again assertion, which failed the moment the cache was
+  introduced until this invalidation call was added. Two **low** findings
+  also fixed: `templates.php`'s "available placeholders" help text was
+  missing `[[qrtoken]]` (added); everything else (capability enforcement on
+  the new `presentationinfoformat` field, no cross-user data leak via
+  `[[presentationinfo]]`, escaping discipline, DB migration correctness,
+  privacy classification, EN/JA lang parity, and all Phase 4.5 fixes) was
+  confirmed already correct with no changes needed. Added `.github/workflows/ci.yml`/
+  `moodle-release.yml` (copied from `mod_confprogram`'s, fully plugin-agnostic
+  bar the release workflow's `PLUGIN` env var). Live-verified the complete
+  ticket lifecycle end-to-end on the demo site: purchase/claim a ticket,
+  download the badge (with `[[presentationinfo]]` listing multiple
+  presentations), scan its real QR token to record a check-in, download the
+  resulting certificate. 86/86 PHPUnit passing, phpcs/moodlecheck clean,
+  deployed copy byte-identical to source.

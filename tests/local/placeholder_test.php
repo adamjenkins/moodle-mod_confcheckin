@@ -319,6 +319,13 @@ final class placeholder_test extends advanced_testcase {
             'timecreated'            => time(),
             'timemodified'           => time(),
         ]);
+        // A direct DB write, standing in for what templates.php's save handler does in
+        // real usage -- that handler also calls forget_presentationinfo_format()
+        // immediately after saving (see templates.php), specifically so a save-then-render
+        // within the same request doesn't see a stale per-request-cached default/older
+        // format. Without this, the read below would incorrectly still return the
+        // pre-insert default cached by the build_context() call above.
+        placeholder::forget_presentationinfo_format((int) $confcheckin->id, 'badge');
 
         $badgecontext = placeholder::build_context($confcheckin, $tickettype, $ticket, $presenter, 'badge');
         $this->assertSame('First Talk (Security)<br>Second Talk ()', $badgecontext['presentationinfo']);

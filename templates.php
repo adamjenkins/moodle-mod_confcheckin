@@ -95,6 +95,11 @@ if ($form->is_cancelled()) {
         $DB->insert_record('confcheckin_template', $record);
     }
 
+    // A save-then-render within the same request (e.g. a preview, or simply this
+    // request's own redirect target) must see the just-saved value, not a stale
+    // per-request cache entry -- see placeholder::get_presentationinfo_format()'s docblock.
+    placeholder::forget_presentationinfo_format($confcheckin->id, $templatetype);
+
     redirect($pageurl, get_string('templatesaved', 'confcheckin'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
@@ -118,7 +123,10 @@ echo html_writer::tag('p', implode(' | ', $tablinks));
 
 // Built from placeholder::wrap() rather than a fixed lang string, so this always
 // shows whichever delimiter pair is CURRENTLY configured (see settings.php).
-$placeholdernames = ['fullname', 'email', 'tickettype', 'confcheckinname', 'coursefullname', 'courseshortname', 'origin', 'qrcode'];
+$placeholdernames = [
+    'fullname', 'email', 'tickettype', 'confcheckinname', 'coursefullname', 'courseshortname',
+    'origin', 'qrtoken', 'qrcode',
+];
 $placeholderlist = implode(', ', array_map([placeholder::class, 'wrap'], $placeholdernames));
 $presenterplaceholderlist = implode(
     ', ',

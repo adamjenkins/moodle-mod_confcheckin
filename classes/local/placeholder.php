@@ -194,14 +194,7 @@ class placeholder {
      * @return string The joined, rendered HTML
      */
     private static function render_presentationinfo(array $submissions, int $confcheckinid, string $templatetype): string {
-        global $DB;
-        $format = $DB->get_field('confcheckin_template', 'presentationinfoformat', [
-            'confcheckin'  => $confcheckinid,
-            'templatetype' => $templatetype,
-        ]);
-        if ($format === false || trim((string) $format) === '') {
-            $format = self::DEFAULT_PRESENTATIONINFO_FORMAT;
-        }
+        $format = self::get_presentationinfo_format($confcheckinid, $templatetype);
 
         $rendered = array_map(
             static fn (\stdClass $submission): string => strtr((string) $format, [
@@ -212,6 +205,59 @@ class placeholder {
         );
 
         return implode('<br>', $rendered);
+    }
+
+    /**
+     * The configured presentationinfoformat for a (confcheckin, templatetype) pair, or
+     * DEFAULT_PRESENTATIONINFO_FORMAT if unset/blank -- cached per request (moodle-reviewer
+     * finding, Phase 4.6: a bulk badge/ticket ZIP export renders the SAME template type once
+     * per ticket, which without this cache re-ran an identical confcheckin_template query for
+     * every single ticket). Same `cache::MODE_REQUEST`, ad-hoc, no-db/caches.php-registration
+     * pattern as \mod_confcheckin\local\eligibility::get_accepted_with_speakers() -- see that
+     * method's docblock for why this is a real cache store, not a plain static array.
+     *
+     * @param int $confcheckinid The confcheckin instance id
+     * @param string $templatetype One of pdf_generator::VALID_TYPES
+     * @return string
+     */
+    private static function get_presentationinfo_format(int $confcheckinid, string $templatetype): string {
+        $cache = \cache::make_from_params(\cache_store::MODE_REQUEST, 'mod_confcheckin', 'presentationinfoformat');
+        $cachekey = $confcheckinid . ':' . $templatetype;
+
+        $cached = $cache->get($cachekey);
+        if ($cached !== false) {
+            return $cached;
+        }
+
+        global $DB;
+        $format = $DB->get_field('confcheckin_template', 'presentationinfoformat', [
+            'confcheckin'  => $confcheckinid,
+            'templatetype' => $templatetype,
+        ]);
+        if ($format === false || trim((string) $format) === '') {
+            $format = self::DEFAULT_PRESENTATIONINFO_FORMAT;
+        }
+
+        $cache->set($cachekey, $format);
+
+        return $format;
+    }
+
+    /**
+     * Invalidates get_presentationinfo_format()'s per-request cache entry for one
+     * (confcheckin, templatetype) pair -- must be called by templates.php immediately
+     * after saving a confcheckin_template row, so that a save-then-render within the SAME
+     * request (e.g. this is exercised directly by
+     * tests/local/placeholder_test.php::test_build_context_presentationinfo_lists_every_presentation,
+     * which asserts a freshly-saved format is picked up without a full new request) sees
+     * the just-saved value rather than a stale cached default/older format.
+     *
+     * @param int $confcheckinid The confcheckin instance id
+     * @param string $templatetype One of pdf_generator::VALID_TYPES
+     */
+    public static function forget_presentationinfo_format(int $confcheckinid, string $templatetype): void {
+        $cache = \cache::make_from_params(\cache_store::MODE_REQUEST, 'mod_confcheckin', 'presentationinfoformat');
+        $cache->delete($confcheckinid . ':' . $templatetype);
     }
 
     /**

@@ -95,48 +95,72 @@ class eligibility {
             return [];
         }
 
-        global $DB;
-
-        $confprogramcm = get_coursemodule_from_id('confprogram', $confprogramcmid, 0, false, IGNORE_MISSING);
-        if (!$confprogramcm) {
-            // Stale link (the mod_confprogram course module was deleted). Degrade
-            // gracefully rather than fatal -- see this class's docblock.
-            return [];
-        }
-
-        $confprogram = $DB->get_record('confprogram', ['id' => $confprogramcm->instance]);
-        if (!$confprogram) {
-            return [];
-        }
-
-        $confsubmissionscm = get_coursemodule_from_id(
-            'confsubmissions',
-            $confprogram->confsubmissionscmid,
-            0,
-            false,
-            IGNORE_MISSING
-        );
-        if (!$confsubmissionscm) {
-            return [];
-        }
-
-        $accepted = \mod_confprogram\local\display_list::get_accepted_submissions(
-            (int) $confprogram->id,
-            (int) $confsubmissionscm->instance
-        );
-
         $result = [];
-        foreach ($accepted as $submission) {
-            $speakers = \mod_confsubmissions\api::get_speakers((int) $submission->id);
-            foreach ($speakers as $speaker) {
+        foreach (self::get_accepted_with_speakers($confprogramcmid) as $entry) {
+            foreach ($entry->speakers as $speaker) {
                 // A manually-entered co-presenter (userid null) never matches: there is
                 // no Moodle account to check eligibility for.
                 if (!empty($speaker->userid) && (int) $speaker->userid === $userid) {
-                    $result[] = $submission;
+                    $result[] = $entry->submission;
                     break;
                 }
             }
         }
+
+        return $result;
+    }
+
+    /**
+     * Resolves a confprogramcmid down to its accepted submissions, each paired with its
+     * own already-fetched speakers list -- cached per confprogramcmid for the lifetime of
+     * the request (moodle-reviewer finding, Phase 4.6: a bulk badge/ticket ZIP export
+     * calls find_presenter_submissions() once per ticket, i.e. once per user, all against
+     * the SAME confprogramcmid; without this cache, every single ticket re-resolved the
+     * whole confprogram/confsubmissions chain and re-queried every accepted submission's
+     * speakers from scratch). A `cache::MODE_REQUEST` store is used (the same ad-hoc,
+     * no-db/caches.php-registration pattern \tool_usertours\local\filter\role::filter_matches()
+     * already uses for its own per-request role cache) rather than a plain static array,
+     * specifically so Moodle's own test-reset machinery clears it between PHPUnit tests --
+     * a raw static property would leak stale data across test methods instead.
+     *
+     * @param int $confprogramcmid The confcheckin instance's confprogramcmid setting
+     * @return \stdClass[] Objects with ->submission and ->speakers, in accepted-submissions order
+     */
+    private static function get_accepted_with_speakers(int $confprogramcmid): array {
+        $cache = \cache::make_from_params(\cache_store::MODE_REQUEST, 'mod_confcheckin', 'eligibility_accepted');
+
+        $cached = $cache->get($confprogramcmid);
+        if ($cached !== false) {
+            return $cached;
+        }
+
+        global $DB;
+        $result = [];
+
+        $confprogramcm = get_coursemodule_from_id('confprogram', $confprogramcmid, 0, false, IGNORE_MISSING);
+        $confprogram = $confprogramcm ? $DB->get_record('confprogram', ['id' => $confprogramcm->instance]) : false;
+        $confsubmissionscm = $confprogram
+            ? get_coursemodule_from_id('confsubmissions', $confprogram->confsubmissionscmid, 0, false, IGNORE_MISSING)
+            : false;
+
+        // Stale link (the mod_confprogram/mod_confsubmissions course module was deleted, or
+        // the confprogram record itself is gone) degrades to an empty result rather than
+        // fatal -- see this class's own docblock for why every step here is defensive.
+        if ($confsubmissionscm) {
+            $accepted = \mod_confprogram\local\display_list::get_accepted_submissions(
+                (int) $confprogram->id,
+                (int) $confsubmissionscm->instance
+            );
+
+            foreach ($accepted as $submission) {
+                $result[] = (object) [
+                    'submission' => $submission,
+                    'speakers'   => \mod_confsubmissions\api::get_speakers((int) $submission->id),
+                ];
+            }
+        }
+
+        $cache->set($confprogramcmid, $result);
 
         return $result;
     }
