@@ -36,6 +36,7 @@ require_once($CFG->dirroot . '/mod/confcheckin/lib.php');
 use mod_confcheckin\form\template_form;
 use mod_confcheckin\local\instance_helper;
 use mod_confcheckin\local\pdf_generator;
+use mod_confcheckin\local\placeholder;
 
 $id = required_param('id', PARAM_INT);
 $templatetype = optional_param('type', 'badge', PARAM_ALPHA);
@@ -113,7 +114,18 @@ foreach (pdf_generator::VALID_TYPES as $type) {
 }
 echo html_writer::tag('p', implode(' | ', $tablinks));
 
-echo $OUTPUT->notification(get_string('templateplaceholders', 'confcheckin'), 'info');
+// Built from placeholder::wrap() rather than a fixed lang string, so this always
+// shows whichever delimiter pair is CURRENTLY configured (see settings.php).
+$placeholdernames = ['fullname', 'email', 'tickettype', 'confcheckinname', 'coursefullname', 'courseshortname', 'origin', 'qrcode'];
+$placeholderlist = implode(', ', array_map([placeholder::class, 'wrap'], $placeholdernames));
+$presenterplaceholderlist = implode(', ', array_map([placeholder::class, 'wrap'], ['submissiontitle', 'track']));
+echo $OUTPUT->notification(
+    get_string('templateplaceholders', 'confcheckin', (object) [
+        'placeholders' => $placeholderlist,
+        'presenterplaceholders' => $presenterplaceholderlist,
+    ]),
+    'info'
+);
 
 $form->display();
 

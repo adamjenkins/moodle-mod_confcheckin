@@ -31,6 +31,7 @@ require_once($CFG->dirroot . '/mod/confcheckin/lib.php');
 
 use mod_confcheckin\form\tickettype_form;
 use mod_confcheckin\local\instance_helper;
+use mod_confcheckin\local\ticket_service;
 
 $id = required_param('id', PARAM_INT);
 $deleteid = optional_param('delete', 0, PARAM_INT);
@@ -85,7 +86,11 @@ if ($editid) {
     $edittickettype = instance_helper::require_tickettype_in_instance($confcheckin->id, $editid);
 }
 
-$tickettypeform = new tickettype_form($pageurl, ['editing' => (bool) $editid]);
+$tickettypeform = new tickettype_form($pageurl, [
+    'editing'      => (bool) $editid,
+    'groupoptions' => confcheckin_group_options((int) $course->id),
+    'enroloptions' => confcheckin_enrol_options((int) $course->id),
+]);
 
 if ($edittickettype) {
     $tickettypeform->set_data((object) [
@@ -99,6 +104,8 @@ if ($edittickettype) {
         'validto'       => $edittickettype->validto,
         'sortorder'     => $edittickettype->sortorder,
         'visible'       => $edittickettype->visible,
+        'groupid'       => $edittickettype->groupid ?? 0,
+        'enrolid'       => $edittickettype->enrolid ?? 0,
     ]);
 }
 
@@ -109,6 +116,20 @@ if ($tickettypeform->is_cancelled()) {
 
     $price = confcheckin_parse_price((string) $formdata->price);
     $capacityraw = trim((string) $formdata->capacity);
+
+    $groupid = !empty($formdata->groupid) ? (int) $formdata->groupid : null;
+    $enrolid = !empty($formdata->enrolid) ? (int) $formdata->enrolid : null;
+
+    // Re-verify server-side that groupid/enrolid belong to this course, even though
+    // tickettype_form::validation() already checked them against the rendered select
+    // options -- the same "never trust a stored/submitted id transitively without
+    // re-verifying" rule this file already applies to tickettypeid above.
+    if ($groupid !== null && !$DB->record_exists('groups', ['id' => $groupid, 'courseid' => $course->id])) {
+        throw new \moodle_exception('error:invalidautogrant', 'confcheckin');
+    }
+    if ($enrolid !== null && !$DB->record_exists('enrol', ['id' => $enrolid, 'courseid' => $course->id])) {
+        throw new \moodle_exception('error:invalidautogrant', 'confcheckin');
+    }
 
     $record = (object) [
         'confcheckin'   => $confcheckin->id,
@@ -121,42 +142,59 @@ if ($tickettypeform->is_cancelled()) {
         'validto'       => !empty($formdata->validto) ? (int) $formdata->validto : null,
         'sortorder'     => (int) $formdata->sortorder,
         'visible'       => (int) $formdata->visible,
+        'groupid'       => $groupid,
+        'enrolid'       => $enrolid,
         'timemodified'  => time(),
     ];
 
-    if ($tickettypeid) {
+    $wasediting = (bool) $tickettypeid;
+
+    if ($wasediting) {
         // Re-verify server-side that the submitted id still belongs to this instance,
         // even though the hidden field was originally populated from a checked lookup:
         // it is client-supplied and must never be trusted on its own.
         instance_helper::require_tickettype_in_instance($confcheckin->id, $tickettypeid);
         $record->id = $tickettypeid;
         $DB->update_record('confcheckin_tickettype', $record);
-        redirect(
-            $pageurl,
-            get_string('tickettypeupdated', 'confcheckin'),
-            null,
-            \core\output\notification::NOTIFY_SUCCESS
-        );
     } else {
         $record->timecreated = time();
         $record->soldcount = 0;
-        $DB->insert_record('confcheckin_tickettype', $record);
-        redirect(
-            $pageurl,
-            get_string('tickettypeadded', 'confcheckin'),
-            null,
-            \core\output\notification::NOTIFY_SUCCESS
-        );
+        $tickettypeid = $DB->insert_record('confcheckin_tickettype', $record);
     }
+
+    // Retroactively grant to CURRENT group members/enrolled users -- without this,
+    // only someone who joins/enrols AFTER this save would ever receive a ticket via
+    // classes/observer.php's real-time handlers (Phase 4.5 follow-up).
+    if ($groupid) {
+        ticket_service::sync_group_grants((int) $confcheckin->id, (int) $tickettypeid, $groupid);
+    } else if ($enrolid) {
+        ticket_service::sync_enrol_grants((int) $confcheckin->id, (int) $tickettypeid, $enrolid);
+    }
+
+    redirect(
+        $pageurl,
+        get_string($wasediting ? 'tickettypeupdated' : 'tickettypeadded', 'confcheckin'),
+        null,
+        \core\output\notification::NOTIFY_SUCCESS
+    );
 }
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(format_string($confcheckin->name), 2);
 echo $OUTPUT->heading(get_string('managetickettypes', 'confcheckin'), 3);
+echo html_writer::tag(
+    'p',
+    html_writer::link(
+        new moodle_url('/mod/confcheckin/orphanedtickets.php', ['id' => $cm->id]),
+        get_string('orphanedtickets', 'confcheckin')
+    )
+);
 
 $tickettypes = $DB->get_records('confcheckin_tickettype', ['confcheckin' => $confcheckin->id], 'sortorder ASC, id ASC');
 
 if ($tickettypes) {
+    $groupnames = groups_get_all_groups($course->id, 0, 0, 'g.id, g.name');
+
     $table = new html_table();
     $table->head = [
         get_string('tickettypename', 'confcheckin'),
@@ -164,6 +202,7 @@ if ($tickettypes) {
         get_string('capacity', 'confcheckin'),
         get_string('presenteronly', 'confcheckin'),
         get_string('visible', 'confcheckin'),
+        get_string('autogrant', 'confcheckin'),
         '',
     ];
     $table->attributes['class'] = 'generaltable';
@@ -172,6 +211,21 @@ if ($tickettypes) {
         $capacitylabel = $tickettype->capacity === null
             ? get_string('unlimited', 'confcheckin')
             : ((int) $tickettype->soldcount . ' / ' . (int) $tickettype->capacity);
+
+        $autograntlabel = '-';
+        if (!empty($tickettype->groupid)) {
+            $groupname = $groupnames[$tickettype->groupid]->name ?? null;
+            $autograntlabel = get_string(
+                'autograntgroupvalue',
+                'confcheckin',
+                $groupname !== null ? format_string($groupname) : get_string('error:invalidtickettype', 'confcheckin')
+            );
+        } else if (!empty($tickettype->enrolid)) {
+            $enrolinstance = $DB->get_record('enrol', ['id' => $tickettype->enrolid]);
+            $enrolplugin = $enrolinstance ? enrol_get_plugin($enrolinstance->enrol) : null;
+            $enrolname = $enrolplugin ? $enrolplugin->get_instance_name($enrolinstance) : null;
+            $autograntlabel = get_string('autograntenrolvalue', 'confcheckin', $enrolname ?? '?');
+        }
 
         $editurl = new moodle_url($pageurl, ['edit' => $tickettype->id]);
         $editlink = $OUTPUT->action_icon(
@@ -195,6 +249,7 @@ if ($tickettypes) {
             $capacitylabel,
             $tickettype->presenteronly ? get_string('yes') : get_string('no'),
             $tickettype->visible ? get_string('yes') : get_string('no'),
+            $autograntlabel,
             $editlink . ' ' . $deletelink,
         ];
     }

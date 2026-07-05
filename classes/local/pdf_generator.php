@@ -35,40 +35,46 @@ class pdf_generator {
     public const VALID_TYPES = ['badge', 'ticket', 'receipt', 'certificate'];
 
     /**
-     * Built-in fallback content for each template type, used until an organiser
-     * configures their own via templates.php. Deliberately simple: real visual design
-     * is exactly what the TinyMCE editor lets an organiser customise.
-     */
-    private const DEFAULT_TEMPLATES = [
-        'badge' => '<div style="text-align:center;">'
-            . '<h2>{{fullname}}</h2>'
-            . '<p>{{tickettype}}</p>'
-            . '<p>{{confcheckinname}}</p>'
-            . '<div>{{qrcode}}</div>'
-            . '</div>',
-        'ticket' => '<h2>{{confcheckinname}}</h2>'
-            . '<p><strong>{{fullname}}</strong> &mdash; {{tickettype}}</p>'
-            . '<div>{{qrcode}}</div>',
-        'receipt' => '<h2>{{confcheckinname}}</h2>'
-            . '<p>Receipt for: {{fullname}}</p>'
-            . '<p>Ticket type: {{tickettype}}</p>'
-            . '<p>How obtained: {{origin}}</p>',
-        'certificate' => '<div style="text-align:center;">'
-            . '<h1>Certificate of Attendance</h1>'
-            . '<p>This certifies that</p>'
-            . '<h2>{{fullname}}</h2>'
-            . '<p>attended {{confcheckinname}}</p>'
-            . '</div>',
-    ];
-
-    /**
-     * The built-in fallback content for a template type.
+     * The built-in fallback content for a template type, used until an organiser
+     * configures their own via templates.php. Deliberately simple: real visual
+     * design is exactly what the TinyMCE editor lets an organiser customise.
+     *
+     * Built via placeholder::wrap() rather than a fixed string constant, so the
+     * fallback content always uses whichever delimiter pair is CURRENTLY
+     * configured (mod_confcheckin/delimiterstart/delimiterend) -- otherwise a site
+     * that changed the delimiter after this plugin's initial install would get a
+     * fallback template full of placeholders in the OLD delimiter, which
+     * render()'s regex (built from the current delimiter) would then never match.
      *
      * @param string $templatetype One of self::VALID_TYPES
      * @return string
      */
     public static function default_template(string $templatetype): string {
-        return self::DEFAULT_TEMPLATES[$templatetype] ?? '';
+        $p = static fn (string $name): string => placeholder::wrap($name);
+
+        $templates = [
+            'badge' => '<div style="text-align:center;">'
+                . '<h2>' . $p('fullname') . '</h2>'
+                . '<p>' . $p('tickettype') . '</p>'
+                . '<p>' . $p('confcheckinname') . '</p>'
+                . '<div>' . $p('qrcode') . '</div>'
+                . '</div>',
+            'ticket' => '<h2>' . $p('confcheckinname') . '</h2>'
+                . '<p><strong>' . $p('fullname') . '</strong> &mdash; ' . $p('tickettype') . '</p>'
+                . '<div>' . $p('qrcode') . '</div>',
+            'receipt' => '<h2>' . $p('confcheckinname') . '</h2>'
+                . '<p>Receipt for: ' . $p('fullname') . '</p>'
+                . '<p>Ticket type: ' . $p('tickettype') . '</p>'
+                . '<p>How obtained: ' . $p('origin') . '</p>',
+            'certificate' => '<div style="text-align:center;">'
+                . '<h1>Certificate of Attendance</h1>'
+                . '<p>This certifies that</p>'
+                . '<h2>' . $p('fullname') . '</h2>'
+                . '<p>attended ' . $p('confcheckinname') . '</p>'
+                . '</div>',
+        ];
+
+        return $templates[$templatetype] ?? '';
     }
 
     /**

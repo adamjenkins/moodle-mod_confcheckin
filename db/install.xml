@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="mod/confcheckin/db" VERSION="2026070401" COMMENT="XMLDB file for Moodle mod/confcheckin"
+<XMLDB PATH="mod/confcheckin/db" VERSION="2026070503" COMMENT="XMLDB file for Moodle mod/confcheckin"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
   <TABLES>
@@ -33,7 +33,9 @@
         <FIELD NAME="validto" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Unix timestamp; ticket only admits until this time. Null means no restriction"/>
         <FIELD NAME="sortorder" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
         <FIELD NAME="visible" TYPE="int" LENGTH="1" NOTNULL="true" SEQUENCE="false" DEFAULT="1" COMMENT="Whether this ticket type is offered for purchase; 0 hides it without deleting it"/>
-        <FIELD NAME="soldcount" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Number of confcheckin_ticket rows ever issued for this ticket type (purchase+free+promo combined). Maintained by classes/local/ticket_service.php's atomic reserve-and-issue logic (SELECT ... FOR UPDATE inside a delegated transaction), NOT by counting confcheckin_ticket rows on demand, so that a capacity check-and-increment is a single indivisible operation under concurrent purchases -- see that class's docblock for the full race-condition rationale. Never decremented (no refund/cancellation flow exists yet)"/>
+        <FIELD NAME="soldcount" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Number of confcheckin_ticket rows currently issued for this ticket type (purchase+free+promo+grant combined). Maintained by classes/local/ticket_service.php's atomic reserve-and-increment logic (SELECT ... FOR UPDATE inside a delegated transaction), NOT by counting confcheckin_ticket rows on demand, so that a capacity check-and-increment is a single indivisible operation under concurrent purchases -- see that class's docblock for the full race-condition rationale. Decremented by revoke_ticket() (Phase 4.5 follow-up: manual revocation of an auto-granted ticket from the orphaned-tickets report), which is the only way a ticket is ever removed post-issuance"/>
+        <FIELD NAME="groupid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="A course group id (Phase 4.5 follow-up): a user joining this group is automatically issued a free ticket of this type (origin 'grant'), kept in sync via classes/observer.php's group_member_added handler. Null means no group-based auto-grant. Mutually exclusive with enrolid (enforced in classes/form/tickettype_form.php's validation, not a DB constraint). Not a real foreign key: {groups} lives outside this plugin's install.xml lineage"/>
+        <FIELD NAME="enrolid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="A course enrolment method instance id, i.e. {enrol}.id (Phase 4.5 follow-up): a user enrolled via this specific method instance is automatically issued a free ticket of this type (origin 'grant'), kept in sync via classes/observer.php's user_enrolment_created handler. Null means no enrolment-based auto-grant. Mutually exclusive with groupid. Not a real foreign key: {enrol} lives outside this plugin's install.xml lineage"/>
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
         <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>
       </FIELDS>
@@ -48,7 +50,7 @@
         <FIELD NAME="confcheckin" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Foreign key to confcheckin table"/>
         <FIELD NAME="tickettypeid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Foreign key to confcheckin_tickettype table"/>
         <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0" COMMENT="Foreign key to user table; the ticket holder"/>
-        <FIELD NAME="origin" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" DEFAULT="purchase" COMMENT="One of purchase, free or promo; enforced in PHP, not a DB CHECK constraint"/>
+        <FIELD NAME="origin" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" DEFAULT="purchase" COMMENT="One of purchase, free, promo or grant (Phase 4.5 follow-up: auto-granted via a linked group/enrolment method); enforced in PHP, not a DB CHECK constraint"/>
         <FIELD NAME="promocodeid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="References confcheckin_promocode.id when origin = promo, else null. Deliberately not declared as a DB-level foreign key, matching the exact key list this table was specified with"/>
         <FIELD NAME="qrtoken" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="A unique, non-guessable random token identifying this ticket's QR code. MUST be generated from a cryptographically-random source (e.g. random_bytes()/random_string(), never a sequential or predictable value) when implemented in a later phase -- a guessable token would let anyone forge/scan another attendee's check-in"/>
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" DEFAULT="0"/>

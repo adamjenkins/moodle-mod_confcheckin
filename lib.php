@@ -215,3 +215,46 @@ function confcheckin_parse_price(string $raw) {
 
     return $amount;
 }
+
+/**
+ * Returns a groupid => name select option list for a course, plus a leading
+ * 0 => "None" entry -- backs the "auto-grant via group" select in
+ * classes/form/tickettype_form.php (Phase 4.5 follow-up).
+ *
+ * @param int $courseid The course id
+ * @return array<int, string> Group id => name, 0 first
+ */
+function confcheckin_group_options(int $courseid): array {
+    $options = [0 => get_string('none')];
+
+    foreach (groups_get_all_groups($courseid) as $group) {
+        $options[(int) $group->id] = format_string($group->name);
+    }
+
+    return $options;
+}
+
+/**
+ * Returns an {enrol}.id => display-name select option list for a course's own
+ * ENABLED enrolment method instances, plus a leading 0 => "None" entry -- backs
+ * the "auto-grant via enrolment method" select in classes/form/tickettype_form.php
+ * (Phase 4.5 follow-up). Disabled instances are excluded: a disabled method can
+ * enrol no one, so linking a ticket type to one could never actually grant
+ * anything.
+ *
+ * @param int $courseid The course id
+ * @return array<int, string> Enrol instance id => display name, 0 first
+ */
+function confcheckin_enrol_options(int $courseid): array {
+    $options = [0 => get_string('none')];
+
+    foreach (enrol_get_instances($courseid, true) as $instance) {
+        $plugin = enrol_get_plugin($instance->enrol);
+        if (!$plugin) {
+            continue;
+        }
+        $options[(int) $instance->id] = $plugin->get_instance_name($instance);
+    }
+
+    return $options;
+}

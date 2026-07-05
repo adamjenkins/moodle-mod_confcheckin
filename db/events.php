@@ -15,7 +15,8 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Plugin version metadata for mod_confcheckin.
+ * Event observer registration for mod_confcheckin (Phase 4.5 follow-up: group/
+ * enrolment-linked auto-grant tickets). See classes/observer.php's docblock.
  *
  * @package    mod_confcheckin
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
@@ -24,11 +25,13 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->component = 'mod_confcheckin';
-$plugin->version   = 2026070503; // The current module version (Date: YYYYMMDDXX).
-$plugin->requires  = 2026042000; // Moodle 5.2.
-$plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '0.1.0';
-$plugin->dependencies = [
-    'mod_confprogram' => ANY_VERSION,
+$observers = [
+    [
+        'eventname'   => '\core\event\group_member_added',
+        'callback'    => '\mod_confcheckin\observer::group_member_added',
+    ],
+    [
+        'eventname'   => '\core\event\user_enrolment_created',
+        'callback'    => '\mod_confcheckin\observer::user_enrolment_created',
+    ],
 ];

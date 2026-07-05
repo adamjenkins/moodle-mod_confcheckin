@@ -35,6 +35,11 @@ class tickettype_form extends \moodleform {
      * Optional custom data:
      * - editing: bool, true when this form is editing an existing ticket type (changes
      *   the submit button label). Defaults to false (adding a new one).
+     *
+     * Required custom data:
+     * - groupoptions: array, this course's groups as id => name, plus a 0 => "None" entry
+     * - enroloptions: array, this course's enabled enrolment method instances as
+     *   id => display name, plus a 0 => "None" entry
      */
     public function definition() {
         $mform = $this->_form;
@@ -93,6 +98,17 @@ class tickettype_form extends \moodleform {
         $mform->addHelpButton('visible', 'visible', 'confcheckin');
         $mform->setDefault('visible', 1);
 
+        $mform->addElement('header', 'autograntheader', get_string('autogrant', 'confcheckin'));
+        $mform->addHelpButton('autograntheader', 'autogrant', 'confcheckin');
+
+        $mform->addElement('select', 'groupid', get_string('autograntgroup', 'confcheckin'), $this->_customdata['groupoptions']);
+        $mform->setType('groupid', PARAM_INT);
+        $mform->setDefault('groupid', 0);
+
+        $mform->addElement('select', 'enrolid', get_string('autograntenrol', 'confcheckin'), $this->_customdata['enroloptions']);
+        $mform->setType('enrolid', PARAM_INT);
+        $mform->setDefault('enrolid', 0);
+
         $this->add_action_buttons(
             false,
             $editing ? get_string('savechanges') : get_string('addtickettype', 'confcheckin')
@@ -131,6 +147,28 @@ class tickettype_form extends \moodleform {
                 && (int) $data['validto'] < (int) $data['validfrom']
         ) {
             $errors['validto'] = get_string('error:validtobeforevalidfrom', 'confcheckin');
+        }
+
+        if (!empty($data['groupid']) && !empty($data['enrolid'])) {
+            $errors['enrolid'] = get_string('error:autograntexclusive', 'confcheckin');
+        }
+
+        // The select elements are themselves scoped to this course (see lib.php's
+        // confcheckin_group_options()/confcheckin_enrol_options()), but a raw POST is
+        // not bound by what the select rendered -- re-check the submitted id is one of
+        // the options actually offered, so a crafted request naming another course's
+        // group/enrolment instance is rejected here rather than silently accepted.
+        if (
+            !empty($data['groupid'])
+                && !array_key_exists((int) $data['groupid'], $this->_customdata['groupoptions'])
+        ) {
+            $errors['groupid'] = get_string('error:invalidautogrant', 'confcheckin');
+        }
+        if (
+            !empty($data['enrolid'])
+                && !array_key_exists((int) $data['enrolid'], $this->_customdata['enroloptions'])
+        ) {
+            $errors['enrolid'] = get_string('error:invalidautogrant', 'confcheckin');
         }
 
         return $errors;

@@ -62,5 +62,26 @@ function xmldb_confcheckin_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026070401, 'confcheckin');
     }
 
+    if ($oldversion < 2026070503) {
+        // Phase 4.5 follow-up: a ticket type can be linked to a course group or
+        // enrolment method so that joining/enrolling automatically grants a free
+        // ticket (origin 'grant'), kept in sync by classes/observer.php. Mutually
+        // exclusive (enforced in classes/form/tickettype_form.php's validation, not
+        // here) -- see db/install.xml's own field comments.
+        $table = new xmldb_table('confcheckin_tickettype');
+
+        $field = new xmldb_field('groupid', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'soldcount');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $field = new xmldb_field('enrolid', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'groupid');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026070503, 'confcheckin');
+    }
+
     return true;
 }

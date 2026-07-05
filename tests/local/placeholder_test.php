@@ -35,17 +35,38 @@ final class placeholder_test extends advanced_testcase {
     /**
      * render() substitutes every recognised placeholder and drops (replaces with '')
      * any placeholder the context has no entry for, rather than leaving the literal
-     * `{{name}}` text in the rendered output.
+     * delimited text in the rendered output. Uses the default `[[name]]` delimiter
+     * pair (mod_confcheckin/delimiterstart/delimiterend admin settings, unset here).
      */
     public function test_render_substitutes_known_and_drops_unknown_placeholders(): void {
+        $this->resetAfterTest();
+
         $context = ['fullname' => 'Ada Lovelace', 'tickettype' => 'Presenter'];
 
         $result = placeholder::render(
-            'Hello {{fullname}}, your ticket is {{tickettype}}. Note: {{doesnotexist}}.',
+            'Hello [[fullname]], your ticket is [[tickettype]]. Note: [[doesnotexist]].',
             $context
         );
 
         $this->assertSame('Hello Ada Lovelace, your ticket is Presenter. Note: .', $result);
+    }
+
+    /**
+     * render() honours the sitewide configured delimiter pair, not a fixed one --
+     * changing the admin setting changes what render() recognises.
+     */
+    public function test_render_honours_configured_delimiters(): void {
+        $this->resetAfterTest();
+
+        set_config('delimiterstart', '{{', 'mod_confcheckin');
+        set_config('delimiterend', '}}', 'mod_confcheckin');
+
+        $context = ['fullname' => 'Ada Lovelace'];
+
+        // The OLD default ([[ ]]) is no longer recognised once the config changes...
+        $this->assertSame('Hello [[fullname]].', placeholder::render('Hello [[fullname]].', $context));
+        // ...but the newly-configured one ({{ }}) is.
+        $this->assertSame('Hello Ada Lovelace.', placeholder::render('Hello {{fullname}}.', $context));
     }
 
     /**
@@ -54,11 +75,29 @@ final class placeholder_test extends advanced_testcase {
      * escaped a second time.
      */
     public function test_render_inserts_html_values_unescaped(): void {
+        $this->resetAfterTest();
+
         $context = ['qrcode' => '<img src="data:image/png;base64,AAAA" alt="" />'];
 
-        $result = placeholder::render('<div>{{qrcode}}</div>', $context);
+        $result = placeholder::render('<div>[[qrcode]]</div>', $context);
 
         $this->assertSame('<div><img src="data:image/png;base64,AAAA" alt="" /></div>', $result);
+    }
+
+    /**
+     * wrap() builds an example delimited placeholder using whatever delimiter pair
+     * is currently configured -- used by templates.php's "available placeholders"
+     * help text so it always matches reality.
+     */
+    public function test_wrap_uses_configured_delimiters(): void {
+        $this->resetAfterTest();
+
+        $this->assertSame('[[fullname]]', placeholder::wrap('fullname'));
+
+        set_config('delimiterstart', '{{', 'mod_confcheckin');
+        set_config('delimiterend', '}}', 'mod_confcheckin');
+
+        $this->assertSame('{{fullname}}', placeholder::wrap('fullname'));
     }
 
     /**
@@ -69,7 +108,8 @@ final class placeholder_test extends advanced_testcase {
     public function test_build_context_escapes_user_supplied_text(): void {
         $this->resetAfterTest();
 
-        $confcheckin = (object) ['name' => 'My Conf'];
+        $course = $this->getDataGenerator()->create_course();
+        $confcheckin = (object) ['name' => 'My Conf', 'course' => $course->id];
         $tickettype = (object) ['name' => 'General'];
         $ticket = (object) ['origin' => 'free', 'qrtoken' => 'abc123'];
         // A confprogramcmid-less confcheckin (unset here) means build_context() never
@@ -87,6 +127,25 @@ final class placeholder_test extends advanced_testcase {
 
         $this->assertStringContainsString('&amp;', $context['fullname']);
         $this->assertStringNotContainsString('A & B', $context['fullname']);
+    }
+
+    /**
+     * build_context() includes 'coursefullname'/'courseshortname' for this
+     * instance's own course.
+     */
+    public function test_build_context_includes_course_fields(): void {
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course(['fullname' => 'My Course', 'shortname' => 'MC101']);
+        $confcheckin = (object) ['name' => 'My Conf', 'course' => $course->id];
+        $tickettype = (object) ['name' => 'General'];
+        $ticket = (object) ['origin' => 'free', 'qrtoken' => 'abc123'];
+        $user = $this->getDataGenerator()->create_user();
+
+        $context = placeholder::build_context($confcheckin, $tickettype, $ticket, $user);
+
+        $this->assertSame('My Course', $context['coursefullname']);
+        $this->assertSame('MC101', $context['courseshortname']);
     }
 
     /**

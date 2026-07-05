@@ -31,6 +31,18 @@ use PHPUnit\Framework\Attributes\CoversClass;
 #[CoversClass(tickettype_form::class)]
 final class tickettype_form_test extends advanced_testcase {
     /**
+     * Customdata required by definition() (Phase 4.5 follow-up: auto-grant selects).
+     * groupid 5 / enrolid 7 are included as valid options since several tests below
+     * submit those ids to exercise the mutual-exclusivity check specifically, not
+     * the separate "must be one of the offered options" check.
+     */
+    private const FORM_CUSTOMDATA = [
+        'editing'      => false,
+        'groupoptions' => [0 => 'None', 5 => 'Test group'],
+        'enroloptions' => [0 => 'None', 7 => 'Test enrolment method'],
+    ];
+
+    /**
      * A minimal, otherwise-valid submitted-data array, so only the field under test
      * can fail.
      *
@@ -49,13 +61,15 @@ final class tickettype_form_test extends advanced_testcase {
             'validto'       => 0,
             'sortorder'     => 0,
             'visible'       => 1,
+            'groupid'       => 0,
+            'enrolid'       => 0,
         ], $overrides);
     }
 
     public function test_valid_data_passes(): void {
         $this->resetAfterTest();
 
-        $form = new tickettype_form(null, ['editing' => false]);
+        $form = new tickettype_form(null, self::FORM_CUSTOMDATA);
         $errors = $form->validation($this->base_data(), []);
 
         $this->assertSame([], $errors);
@@ -64,7 +78,7 @@ final class tickettype_form_test extends advanced_testcase {
     public function test_missing_name_rejected(): void {
         $this->resetAfterTest();
 
-        $form = new tickettype_form(null, ['editing' => false]);
+        $form = new tickettype_form(null, self::FORM_CUSTOMDATA);
         $errors = $form->validation($this->base_data(['name' => '  ']), []);
 
         $this->assertArrayHasKey('name', $errors);
@@ -76,7 +90,7 @@ final class tickettype_form_test extends advanced_testcase {
     public function test_price_validation(): void {
         $this->resetAfterTest();
 
-        $form = new tickettype_form(null, ['editing' => false]);
+        $form = new tickettype_form(null, self::FORM_CUSTOMDATA);
 
         $errors = $form->validation($this->base_data(['price' => '-5.00']), []);
         $this->assertArrayHasKey('price', $errors);
@@ -94,7 +108,7 @@ final class tickettype_form_test extends advanced_testcase {
     public function test_invalid_currency_rejected(): void {
         $this->resetAfterTest();
 
-        $form = new tickettype_form(null, ['editing' => false]);
+        $form = new tickettype_form(null, self::FORM_CUSTOMDATA);
         $errors = $form->validation($this->base_data(['currency' => 'ZZZ']), []);
 
         $this->assertArrayHasKey('currency', $errors);
@@ -103,7 +117,7 @@ final class tickettype_form_test extends advanced_testcase {
     public function test_capacity_validation(): void {
         $this->resetAfterTest();
 
-        $form = new tickettype_form(null, ['editing' => false]);
+        $form = new tickettype_form(null, self::FORM_CUSTOMDATA);
 
         $errors = $form->validation($this->base_data(['capacity' => '']), []);
         $this->assertArrayNotHasKey('capacity', $errors);
@@ -124,7 +138,7 @@ final class tickettype_form_test extends advanced_testcase {
     public function test_validto_before_validfrom_rejected(): void {
         $this->resetAfterTest();
 
-        $form = new tickettype_form(null, ['editing' => false]);
+        $form = new tickettype_form(null, self::FORM_CUSTOMDATA);
         $now = time();
 
         $errors = $form->validation($this->base_data(['validfrom' => $now, 'validto' => $now - DAYSECS]), []);
@@ -132,5 +146,45 @@ final class tickettype_form_test extends advanced_testcase {
 
         $errors = $form->validation($this->base_data(['validfrom' => $now, 'validto' => $now + DAYSECS]), []);
         $this->assertArrayNotHasKey('validto', $errors);
+    }
+
+    /**
+     * Auto-grant via a group and via an enrolment method are mutually exclusive;
+     * either alone, or neither, is fine.
+     */
+    public function test_autogrant_group_and_enrol_are_mutually_exclusive(): void {
+        $this->resetAfterTest();
+
+        $form = new tickettype_form(null, self::FORM_CUSTOMDATA);
+
+        $errors = $form->validation($this->base_data(['groupid' => 5, 'enrolid' => 7]), []);
+        $this->assertArrayHasKey('enrolid', $errors);
+
+        $errors = $form->validation($this->base_data(['groupid' => 5, 'enrolid' => 0]), []);
+        $this->assertArrayNotHasKey('enrolid', $errors);
+
+        $errors = $form->validation($this->base_data(['groupid' => 0, 'enrolid' => 7]), []);
+        $this->assertArrayNotHasKey('enrolid', $errors);
+
+        $errors = $form->validation($this->base_data(['groupid' => 0, 'enrolid' => 0]), []);
+        $this->assertSame([], $errors);
+    }
+
+    /**
+     * A groupid/enrolid not among the options this course's select was actually
+     * rendered with (e.g. one belonging to a different course) is rejected, even
+     * though it's individually well-formed -- a crafted POST must not be able to
+     * link a ticket type to another course's group or enrolment method.
+     */
+    public function test_autogrant_id_not_in_offered_options_is_rejected(): void {
+        $this->resetAfterTest();
+
+        $form = new tickettype_form(null, self::FORM_CUSTOMDATA);
+
+        $errors = $form->validation($this->base_data(['groupid' => 999, 'enrolid' => 0]), []);
+        $this->assertArrayHasKey('groupid', $errors);
+
+        $errors = $form->validation($this->base_data(['groupid' => 0, 'enrolid' => 999]), []);
+        $this->assertArrayHasKey('enrolid', $errors);
     }
 }

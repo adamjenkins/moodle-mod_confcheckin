@@ -339,4 +339,270 @@ final class ticket_service_test extends advanced_testcase {
 
         $this->assertSame(count($tokens), count(array_unique($tokens)));
     }
+
+    /**
+     * issue_granted_ticket() creates a ticket with origin = 'grant', regardless of
+     * the ticket type's own nonzero price (unlike issue_free_ticket(), which
+     * refuses a nonzero-price type -- a group/enrolment grant is a deliberate
+     * complimentary allocation).
+     */
+    public function test_issue_granted_ticket_ignores_price(): void {
+        $this->resetAfterTest();
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid, ['price' => '99.00']);
+        $user = $this->getDataGenerator()->create_user();
+
+        $ticket = ticket_service::issue_granted_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+
+        $this->assertSame('grant', $ticket->origin);
+    }
+
+    /**
+     * issue_granted_ticket() is idempotent: calling it twice for the same user/type
+     * returns the SAME ticket (no duplicate row, soldcount only incremented once) --
+     * required since classes/observer.php and sync_group_grants()/sync_enrol_grants()
+     * can legitimately call it more than once for the same pair (re-running a sync,
+     * a user leaving and rejoining a group).
+     */
+    public function test_issue_granted_ticket_is_idempotent(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid);
+        $user = $this->getDataGenerator()->create_user();
+
+        $first = ticket_service::issue_granted_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+        $second = ticket_service::issue_granted_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+
+        $this->assertSame((int) $first->id, (int) $second->id);
+        $this->assertEquals(1, $DB->count_records('confcheckin_ticket', ['tickettypeid' => $tickettypeid]));
+        $this->assertSame(1, (int) $DB->get_field('confcheckin_tickettype', 'soldcount', ['id' => $tickettypeid]));
+    }
+
+    /**
+     * A user who already holds a ticket of a DIFFERENT origin (e.g. they already
+     * purchased one) is not issued a second, duplicate ticket by
+     * issue_granted_ticket() -- the idempotency check is per user+type, not
+     * per user+type+origin.
+     */
+    public function test_issue_granted_ticket_does_not_duplicate_an_existing_ticket_of_any_origin(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid, ['price' => '20.00']);
+        $user = $this->getDataGenerator()->create_user();
+
+        $purchased = ticket_service::issue_purchased_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+        $granted = ticket_service::issue_granted_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+
+        $this->assertSame((int) $purchased->id, (int) $granted->id);
+        $this->assertSame('purchase', $granted->origin);
+        $this->assertEquals(1, $DB->count_records('confcheckin_ticket', ['tickettypeid' => $tickettypeid]));
+    }
+
+    /**
+     * issue_granted_ticket() still respects capacity for a genuinely NEW grant.
+     */
+    public function test_issue_granted_ticket_respects_capacity(): void {
+        $this->resetAfterTest();
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid, ['capacity' => 1]);
+        $first = $this->getDataGenerator()->create_user();
+        $second = $this->getDataGenerator()->create_user();
+
+        ticket_service::issue_granted_ticket($confcheckinid, $tickettypeid, (int) $first->id);
+
+        $this->expectException(\moodle_exception::class);
+        ticket_service::issue_granted_ticket($confcheckinid, $tickettypeid, (int) $second->id);
+    }
+
+    /**
+     * revoke_ticket() deletes the ticket AND its check-in row (if any), and
+     * decrements the ticket type's soldcount by one, freeing the capacity.
+     */
+    public function test_revoke_ticket_deletes_ticket_and_checkin_and_frees_capacity(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid, ['capacity' => 1]);
+        $user = $this->getDataGenerator()->create_user();
+        $staff = $this->getDataGenerator()->create_user();
+
+        $ticket = ticket_service::issue_granted_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+        checkin_service::record_checkin($confcheckinid, $ticket->qrtoken, (int) $staff->id);
+
+        ticket_service::revoke_ticket((int) $ticket->id);
+
+        $this->assertFalse($DB->record_exists('confcheckin_ticket', ['id' => $ticket->id]));
+        $this->assertFalse($DB->record_exists('confcheckin_checkin', ['ticketid' => $ticket->id]));
+        $this->assertSame(0, (int) $DB->get_field('confcheckin_tickettype', 'soldcount', ['id' => $tickettypeid]));
+
+        // The freed capacity is usable again.
+        $another = $this->getDataGenerator()->create_user();
+        $newticket = ticket_service::issue_granted_ticket($confcheckinid, $tickettypeid, (int) $another->id);
+        $this->assertNotNull($newticket);
+    }
+
+    /**
+     * revoke_ticket() never lets soldcount go negative, even called on an already
+     * (or never) issued ticket id.
+     */
+    public function test_revoke_ticket_on_nonexistent_ticket_is_a_no_op(): void {
+        $this->resetAfterTest();
+
+        ticket_service::revoke_ticket(999999);
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * sync_group_grants() issues a ticket to every CURRENT member of a group, and
+     * returns the count of NEWLY issued tickets (excluding anyone who already held
+     * one).
+     */
+    public function test_sync_group_grants_issues_to_current_members_only_once(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $course = $this->getDataGenerator()->create_course();
+        $confcheckin = $this->getDataGenerator()->create_module('confcheckin', ['course' => $course->id]);
+        $tickettypeid = $this->create_tickettype((int) $confcheckin->id);
+
+        $group = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
+        $member1 = $this->getDataGenerator()->create_user();
+        $member2 = $this->getDataGenerator()->create_user();
+        $nonmember = $this->getDataGenerator()->create_user();
+        // The groups_add_member() function silently no-ops for a user not enrolled in the
+        // group's course -- a real course participant always is.
+        $this->getDataGenerator()->enrol_user($member1->id, $course->id);
+        $this->getDataGenerator()->enrol_user($member2->id, $course->id);
+        $this->getDataGenerator()->create_group_member(['groupid' => $group->id, 'userid' => $member1->id]);
+        $this->getDataGenerator()->create_group_member(['groupid' => $group->id, 'userid' => $member2->id]);
+
+        $issued = ticket_service::sync_group_grants((int) $confcheckin->id, $tickettypeid, (int) $group->id);
+
+        $this->assertSame(2, $issued);
+        $this->assertEquals(2, $DB->count_records('confcheckin_ticket', ['tickettypeid' => $tickettypeid]));
+        $this->assertFalse($DB->record_exists('confcheckin_ticket', ['tickettypeid' => $tickettypeid, 'userid' => $nonmember->id]));
+
+        // Re-syncing does not duplicate.
+        $reissued = ticket_service::sync_group_grants((int) $confcheckin->id, $tickettypeid, (int) $group->id);
+        $this->assertSame(0, $reissued);
+        $this->assertEquals(2, $DB->count_records('confcheckin_ticket', ['tickettypeid' => $tickettypeid]));
+    }
+
+    /**
+     * sync_enrol_grants() issues a ticket to every user CURRENTLY enrolled via a
+     * specific enrolment method instance.
+     */
+    public function test_sync_enrol_grants_issues_to_current_enrolments_only_once(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $course = $this->getDataGenerator()->create_course();
+        $confcheckin = $this->getDataGenerator()->create_module('confcheckin', ['course' => $course->id]);
+        $tickettypeid = $this->create_tickettype((int) $confcheckin->id);
+
+        $manualinstance = $DB->get_record('enrol', ['courseid' => $course->id, 'enrol' => 'manual'], '*', MUST_EXIST);
+
+        $enrolled = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($enrolled->id, $course->id, 'student', 'manual');
+        $notenrolled = $this->getDataGenerator()->create_user();
+
+        $issued = ticket_service::sync_enrol_grants((int) $confcheckin->id, $tickettypeid, (int) $manualinstance->id);
+
+        $this->assertSame(1, $issued);
+        $this->assertTrue($DB->record_exists('confcheckin_ticket', ['tickettypeid' => $tickettypeid, 'userid' => $enrolled->id]));
+        $this->assertFalse(
+            $DB->record_exists('confcheckin_ticket', ['tickettypeid' => $tickettypeid, 'userid' => $notenrolled->id])
+        );
+    }
+
+    /**
+     * find_orphaned_tickets() flags a 'grant'-origin ticket whose holder has since
+     * left the linking group, but leaves a still-member's ticket alone, and never
+     * flags a non-'grant'-origin ticket even if it happens to belong to a linked
+     * ticket type.
+     */
+    public function test_find_orphaned_tickets_detects_group_departure(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $course = $this->getDataGenerator()->create_course();
+        $confcheckin = $this->getDataGenerator()->create_module('confcheckin', ['course' => $course->id]);
+        $group = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
+        $tickettypeid = $this->create_tickettype((int) $confcheckin->id, ['groupid' => $group->id]);
+
+        $stays = $this->getDataGenerator()->create_user();
+        $leaves = $this->getDataGenerator()->create_user();
+        // The groups_add_member() function silently no-ops for a user not enrolled in the
+        // group's course -- a real course participant always is.
+        $this->getDataGenerator()->enrol_user($stays->id, $course->id);
+        $this->getDataGenerator()->enrol_user($leaves->id, $course->id);
+        $this->getDataGenerator()->create_group_member(['groupid' => $group->id, 'userid' => $stays->id]);
+        $this->getDataGenerator()->create_group_member(['groupid' => $group->id, 'userid' => $leaves->id]);
+
+        ticket_service::sync_group_grants((int) $confcheckin->id, $tickettypeid, (int) $group->id);
+
+        groups_remove_member($group->id, $leaves->id);
+
+        $orphaned = ticket_service::find_orphaned_tickets((int) $confcheckin->id);
+
+        $this->assertCount(1, $orphaned);
+        $entry = reset($orphaned);
+        $this->assertSame((int) $leaves->id, (int) $entry['ticket']->userid);
+        $this->assertSame('group', $entry['reason']);
+    }
+
+    /**
+     * find_orphaned_tickets() flags a 'grant'-origin ticket whose holder has since
+     * been unenrolled from the linking enrolment method instance.
+     */
+    public function test_find_orphaned_tickets_detects_unenrolment(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $course = $this->getDataGenerator()->create_course();
+        $confcheckin = $this->getDataGenerator()->create_module('confcheckin', ['course' => $course->id]);
+        $manualinstance = $DB->get_record('enrol', ['courseid' => $course->id, 'enrol' => 'manual'], '*', MUST_EXIST);
+        $tickettypeid = $this->create_tickettype((int) $confcheckin->id, ['enrolid' => $manualinstance->id]);
+
+        $user = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($user->id, $course->id, 'student', 'manual');
+        ticket_service::sync_enrol_grants((int) $confcheckin->id, $tickettypeid, (int) $manualinstance->id);
+
+        $manualplugin = enrol_get_plugin('manual');
+        $manualplugin->unenrol_user($manualinstance, $user->id);
+
+        $orphaned = ticket_service::find_orphaned_tickets((int) $confcheckin->id);
+
+        $this->assertCount(1, $orphaned);
+        $entry = reset($orphaned);
+        $this->assertSame((int) $user->id, (int) $entry['ticket']->userid);
+        $this->assertSame('enrol', $entry['reason']);
+    }
+
+    /**
+     * find_orphaned_tickets() never flags a ticket whose holder is still a current
+     * member/still enrolled.
+     */
+    public function test_find_orphaned_tickets_ignores_current_members(): void {
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $confcheckin = $this->getDataGenerator()->create_module('confcheckin', ['course' => $course->id]);
+        $group = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
+        $tickettypeid = $this->create_tickettype((int) $confcheckin->id, ['groupid' => $group->id]);
+
+        $member = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($member->id, $course->id);
+        $this->getDataGenerator()->create_group_member(['groupid' => $group->id, 'userid' => $member->id]);
+        ticket_service::sync_group_grants((int) $confcheckin->id, $tickettypeid, (int) $group->id);
+
+        $this->assertSame([], ticket_service::find_orphaned_tickets((int) $confcheckin->id));
+    }
 }

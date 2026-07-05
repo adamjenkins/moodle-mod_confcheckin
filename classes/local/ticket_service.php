@@ -18,7 +18,7 @@ namespace mod_confcheckin\local;
 
 /**
  * Ticket issuance: capacity-safe, concurrency-safe creation of confcheckin_ticket
- * rows for all three origins (purchase, free, promo).
+ * rows for all four origins (purchase, free, promo, grant).
  *
  * ** Capacity race-condition design (read this before changing anything here) **
  *
@@ -211,6 +211,222 @@ class ticket_service {
     }
 
     /**
+     * Issues a "granted" ticket (origin = 'grant') for a ticket type linked to a
+     * course group or enrolment method (Phase 4.5 follow-up), called from
+     * classes/observer.php on group join/enrolment, and from sync_group_grants()/
+     * sync_enrol_grants() when an organiser links (or re-syncs) a ticket type.
+     *
+     * Idempotent: if this exact user already holds a ticket of this exact type
+     * (regardless of origin -- e.g. they already purchased one before joining the
+     * group), the existing ticket is returned unchanged rather than issuing a
+     * second one. This is different from issue_free_ticket()/issue_purchased_ticket(),
+     * which have no such check, because THIS method's callers (an event observer, a
+     * bulk sync loop) can legitimately be invoked more than once for the same
+     * user/type pair (e.g. re-running "sync now", or a user leaving and rejoining a
+     * group) and must not create duplicates each time.
+     *
+     * Unlike issue_free_ticket(), this does NOT require the ticket type's price to
+     * be zero: a group/enrolment grant is a deliberate complimentary allocation
+     * regardless of the type's normal price (e.g. a "VIP" paid ticket type an
+     * organiser also wants to comp to a "Volunteers" group).
+     *
+     * @param int $confcheckinid The confcheckin instance id
+     * @param int $tickettypeid The confcheckin_tickettype id (must belong to $confcheckinid)
+     * @param int $userid The user id to grant a ticket to
+     * @return \stdClass The (possibly pre-existing) confcheckin_ticket record
+     * @throws \moodle_exception if the ticket type does not belong to this instance
+     */
+    public static function issue_granted_ticket(int $confcheckinid, int $tickettypeid, int $userid): \stdClass {
+        global $DB;
+
+        $existing = $DB->get_record('confcheckin_ticket', ['tickettypeid' => $tickettypeid, 'userid' => $userid]);
+        if ($existing) {
+            return $existing;
+        }
+
+        $transaction = $DB->start_delegated_transaction();
+        try {
+            $tickettype = self::lock_tickettype($confcheckinid, $tickettypeid);
+
+            // Re-check for a race: another request may have inserted a ticket for
+            // this user/type between the unlocked check above and this locked one.
+            $racedticket = $DB->get_record('confcheckin_ticket', ['tickettypeid' => $tickettypeid, 'userid' => $userid]);
+            if ($racedticket) {
+                $transaction->allow_commit();
+                return $racedticket;
+            }
+
+            self::reserve_capacity_locked($tickettype);
+
+            $ticket = self::insert_ticket($confcheckinid, $tickettype->id, $userid, 'grant', null);
+
+            $transaction->allow_commit();
+
+            return $ticket;
+        } catch (\Throwable $e) {
+            $transaction->rollback($e);
+        }
+    }
+
+    /**
+     * Revokes (permanently deletes) an issued ticket and its check-in record, if
+     * any, decrementing the ticket type's soldcount so the freed capacity becomes
+     * available again. This is the only way a confcheckin_ticket row is ever
+     * removed after issuance -- see db/install.xml's own soldcount field comment.
+     *
+     * Used by orphanedtickets.php to let an organiser manually revoke an
+     * auto-granted ticket whose granting group membership/enrolment no longer
+     * holds (Phase 4.5 follow-up, user feedback, 2026-07-05: "add a report for
+     * orphaned tickets that allows editingteachers to manually revoke tickets" --
+     * auto-revoking on group/enrolment removal was explicitly rejected in favour of
+     * this manual report, to avoid surprising an attendee by yanking a ticket
+     * over an unrelated group change).
+     *
+     * @param int $ticketid The confcheckin_ticket id to revoke
+     * @return void
+     */
+    public static function revoke_ticket(int $ticketid): void {
+        global $DB;
+
+        $ticket = $DB->get_record('confcheckin_ticket', ['id' => $ticketid]);
+        if (!$ticket) {
+            return;
+        }
+
+        $transaction = $DB->start_delegated_transaction();
+        try {
+            $DB->delete_records('confcheckin_checkin', ['ticketid' => $ticketid]);
+            $DB->delete_records('confcheckin_ticket', ['id' => $ticketid]);
+
+            // Locked the same way as every issuance path in this class: two concurrent
+            // revokes of different tickets of the SAME ticket type must not both read
+            // the same stale soldcount and each compute one decrement, which would
+            // under-decrement and permanently understate real available capacity.
+            $tickettype = self::lock_tickettype((int) $ticket->confcheckin, (int) $ticket->tickettypeid);
+            $DB->set_field(
+                'confcheckin_tickettype',
+                'soldcount',
+                max(0, (int) $tickettype->soldcount - 1),
+                ['id' => $tickettype->id]
+            );
+
+            $transaction->allow_commit();
+        } catch (\Throwable $e) {
+            $transaction->rollback($e);
+        }
+    }
+
+    /**
+     * Issues a granted ticket to every CURRENT member of a ticket type's linked
+     * group, for a ticket type that was just linked (or re-synced) to that group --
+     * without this, only users who join the group AFTER the link is configured
+     * would ever get a ticket via classes/observer.php's real-time handler.
+     *
+     * @param int $confcheckinid The confcheckin instance id
+     * @param int $tickettypeid The confcheckin_tickettype id (must belong to $confcheckinid)
+     * @param int $groupid The course group id
+     * @return int How many tickets were newly issued (excludes users who already held one)
+     */
+    public static function sync_group_grants(int $confcheckinid, int $tickettypeid, int $groupid): int {
+        global $DB;
+
+        $issued = 0;
+        foreach (groups_get_members($groupid, 'u.id') as $member) {
+            $before = $DB->record_exists('confcheckin_ticket', ['tickettypeid' => $tickettypeid, 'userid' => $member->id]);
+            self::issue_granted_ticket($confcheckinid, $tickettypeid, (int) $member->id);
+            if (!$before) {
+                $issued++;
+            }
+        }
+
+        return $issued;
+    }
+
+    /**
+     * Issues a granted ticket to every user CURRENTLY enrolled via a ticket type's
+     * linked enrolment method instance -- the enrolment-method equivalent of
+     * sync_group_grants(), for the same reason.
+     *
+     * @param int $confcheckinid The confcheckin instance id
+     * @param int $tickettypeid The confcheckin_tickettype id (must belong to $confcheckinid)
+     * @param int $enrolid The {enrol}.id enrolment method instance id
+     * @return int How many tickets were newly issued (excludes users who already held one)
+     */
+    public static function sync_enrol_grants(int $confcheckinid, int $tickettypeid, int $enrolid): int {
+        global $DB;
+
+        $userids = $DB->get_fieldset_select(
+            'user_enrolments',
+            'userid',
+            'enrolid = :enrolid',
+            ['enrolid' => $enrolid]
+        );
+
+        $issued = 0;
+        foreach (array_unique($userids) as $userid) {
+            $before = $DB->record_exists('confcheckin_ticket', ['tickettypeid' => $tickettypeid, 'userid' => $userid]);
+            self::issue_granted_ticket($confcheckinid, $tickettypeid, (int) $userid);
+            if (!$before) {
+                $issued++;
+            }
+        }
+
+        return $issued;
+    }
+
+    /**
+     * Finds every "orphaned" granted ticket in a confcheckin instance: a ticket
+     * with origin = 'grant' whose ticket type is still linked to a group the
+     * holder is no longer a member of, or an enrolment method instance the holder
+     * is no longer enrolled via. Powers orphanedtickets.php's report -- see
+     * revoke_ticket()'s docblock for why this is a manual report rather than an
+     * automatic revocation.
+     *
+     * @param int $confcheckinid The confcheckin instance id
+     * @return array{ticket: \stdClass, tickettype: \stdClass, reason: string}[] Keyed by ticket id
+     */
+    public static function find_orphaned_tickets(int $confcheckinid): array {
+        global $DB;
+
+        $tickets = $DB->get_records('confcheckin_ticket', ['confcheckin' => $confcheckinid, 'origin' => 'grant']);
+        if (!$tickets) {
+            return [];
+        }
+
+        $tickettypes = $DB->get_records('confcheckin_tickettype', ['confcheckin' => $confcheckinid]);
+
+        $orphaned = [];
+        foreach ($tickets as $ticket) {
+            $tickettype = $tickettypes[$ticket->tickettypeid] ?? null;
+            if (!$tickettype) {
+                // The ticket type itself was deleted entirely; nothing left to
+                // re-check membership against, but the ticket is still real and
+                // still checked-in-able, so it is not reported as orphaned here.
+                continue;
+            }
+
+            $reason = null;
+            if (!empty($tickettype->groupid) && !groups_is_member((int) $tickettype->groupid, (int) $ticket->userid)) {
+                $reason = 'group';
+            } else if (!empty($tickettype->enrolid)) {
+                $stillenrolled = $DB->record_exists('user_enrolments', [
+                    'enrolid' => $tickettype->enrolid,
+                    'userid'  => $ticket->userid,
+                ]);
+                if (!$stillenrolled) {
+                    $reason = 'enrol';
+                }
+            }
+
+            if ($reason !== null) {
+                $orphaned[$ticket->id] = ['ticket' => $ticket, 'tickettype' => $tickettype, 'reason' => $reason];
+            }
+        }
+
+        return $orphaned;
+    }
+
+    /**
      * Whether a ticket type currently has remaining capacity, WITHOUT locking or
      * reserving a seat. Suitable only for read/display purposes (e.g. purchase.php
      * deciding whether to show a "sold out" label) -- never for a purchase decision,
@@ -298,7 +514,7 @@ class ticket_service {
      * @param int $confcheckinid The confcheckin instance id
      * @param int $tickettypeid The confcheckin_tickettype id
      * @param int $userid The user id the ticket is issued to
-     * @param string $origin One of purchase, free or promo
+     * @param string $origin One of purchase, free, promo or grant
      * @param int|null $promocodeid The confcheckin_promocode id, when $origin is promo; else null
      * @return \stdClass The newly-inserted confcheckin_ticket record
      */

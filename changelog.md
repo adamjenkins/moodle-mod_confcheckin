@@ -177,3 +177,158 @@
     organiser-customised template rendering, and real PDF byte output
     (`%PDF` magic bytes) for every template type, using a real issued ticket
     on this checkout.
+
+- Phase 4.5: QR check-in scanner, attendance certificates, and a Moodle app
+  webview addon. No schema change for this part — version bumped
+  (`2026070502`) to register the new `db/services.php` AJAX function and
+  `db/mobile.php` addon.
+  - `scan.php` (gated on `mod/confcheckin:scancheckin`) + `amd/src/scanner.js`:
+    a dual-path scanner design, since no JS QR-decoding library ships in
+    Moodle core. Path 1 (always available): a plain, always-focused text
+    input that auto-submits on Enter — reliable because USB/Bluetooth badge
+    scanners emulate keyboard input, zero dependency. Path 2 (progressive
+    enhancement): the native browser `BarcodeDetector` API, feature-detected
+    (`'BarcodeDetector' in window`) since it is not universally supported
+    (notably absent in Safari/WebKit) — a bonus, never a requirement.
+  - `classes/local/checkin_service.php::record_checkin()` (called via a new
+    `mod_confcheckin_record_checkin` AJAX external function,
+    `classes/external/record_checkin.php`) looks up a ticket by its globally
+    unique `qrtoken` with no instance filter (the index really is
+    global), then explicitly re-checks the found ticket's own `confcheckin`
+    field against the instance the scan happened in, throwing a distinct
+    `error:qrtokenwrongevent` if it doesn't match — a deliberate departure
+    from this project's usual "same message regardless" IDOR pattern,
+    justified because the caller already holds `scancheckin` and is
+    scanning a badge an attendee physically handed them, not guessing ids.
+    Idempotent: re-scanning an already-checked-in ticket returns
+    `alreadycheckedin = true` rather than erroring or duplicating.
+  - `badge.php`/`badges.php`: a `certificate` template type is now valid,
+    gated on `mod/confcheckin:viewowncertificate` (ticket holder) or
+    `:downloadbadges` (organiser bulk download), and additionally requires
+    `checkin_service::has_checked_in()` to be true — an attendee cannot
+    download a certificate before actually checking in. `purchase.php`'s
+    "Your tickets" table gained a "Checked in" column and only offers the
+    certificate download once checked in.
+  - `db/mobile.php` + `classes/output/mobile.php`: a `CoreCourseModuleDelegate`
+    addon using the documented `<core-iframe>` site-plugins pattern (rather
+    than a fully custom Ionic-JS addon) to reuse `scan.php`/`view.php`
+    inside the Moodle app's webview, resolved by capability. **Unverified
+    against a real Moodle app client** — no mobile emulator/build tooling
+    available in this environment, matching this project's established
+    "known limitation, no test environment" pattern.
+  - `classes/privacy/provider.php`: `confcheckin_checkin` rows are
+    two-person records (an attendee via `ticketid`, and a `scannedby` staff
+    member) — both are now covered by `get_contexts_for_userid`/
+    `get_users_in_context`/`export_user_data`, but `delete_data_for_user`
+    only ever removes a user's own ticket+check-in (as attendee);
+    `scannedby` references are deliberately preserved on delete (no
+    nullable/anonymisation slot exists for that `NOT NULL` column, and it is
+    treated as an audit record, akin to Moodle's own grade history) — a
+    documented, accepted limitation, not an oversight.
+  - 64/64 PHPUnit passing (was 52), phpcs/moodlecheck clean.
+
+- Phase 4.5 follow-up (user feedback): a sitewide template placeholder
+  delimiter setting, two new placeholders, and group/enrolment-linked
+  auto-grant tickets with a manual "orphaned tickets" report. Schema bumped
+  (`2026070503`, adding `confcheckin_tickettype.groupid`/`.enrolid`).
+  - `settings.php` (new): `mod_confcheckin/delimiterstart`/`delimiterend`
+    admin settings, defaulting to `[[`/`]]` (not the double-curly-brace
+    convention this feature originally shipped with — curly braces can
+    visually collide with TinyMCE's own HTML/CSS authoring context).
+    Sitewide, not per-instance: organisers across a site share one
+    convention to learn, and changing it after templates are authored means
+    updating those templates regardless of scope, so a per-instance setting
+    would only multiply that maintenance burden.
+    `classes/local/placeholder.php::render()`/`wrap()` now build their regex
+    /example text from the configured pair (falling back to `[[`/`]]` if
+    unset/blank) instead of a hardcoded `{{...}}`; `pdf_generator.php`'s
+    built-in fallback templates and `templates.php`'s "available
+    placeholders" help text are both built dynamically from the current
+    setting, so they always match what `render()` actually recognises.
+  - Two new placeholders: `coursefullname`/`courseshortname`, resolved via
+    `get_course($confcheckin->course)` in `build_context()`.
+  - `confcheckin_tickettype.groupid`/`.enrolid` (mutually exclusive,
+    validated in `classes/form/tickettype_form.php`): a ticket type can be
+    linked to a course group or a specific enrolment method instance, so
+    that joining the group / enrolling via that method automatically issues
+    a free ticket (`origin = 'grant'`) — kept in sync in real time by two
+    new event observers (`classes/observer.php`,
+    `\core\event\group_member_added`/`\core\event\user_enrolment_created`,
+    registered in the new `db/events.php`). Matched by the specific `{enrol}.id`
+    instance, not merely the enrol plugin name, since a course can have
+    several instances of the same method (e.g. two self-enrolment keys).
+    `ticket_service::issue_granted_ticket()` is idempotent (a user who
+    already holds a ticket of that type, of ANY origin, is never issued a
+    duplicate) and still capacity-checked, but unlike `issue_free_ticket()`
+    does not require the type's own price to be zero (a grant is a
+    deliberate complimentary allocation regardless of nominal price).
+    Saving a group/enrolment link on `tickettypes.php` also immediately
+    calls `sync_group_grants()`/`sync_enrol_grants()` to retroactively grant
+    to every CURRENT member/enrolled user, not just future ones.
+  - User feedback, 2026-07-05, on what happens when a granted ticket's
+    membership is later revoked: "leave the ticket alone, but add a report
+    for orphaned tickets that allows editingteachers to manually revoke
+    tickets" — explicitly rejecting auto-revocation, to avoid surprising an
+    attendee by yanking a ticket over an unrelated group change.
+    `ticket_service::find_orphaned_tickets()` + new `orphanedtickets.php`
+    (gated on `mod/confcheckin:managetickettypes`) implement exactly that:
+    a `grant`-origin ticket whose holder is no longer a group
+    member/enrolled via the linking method is listed with a manual "Revoke"
+    action. `ticket_service::revoke_ticket()` (the first ticket-removal path
+    this plugin has ever had) deletes the ticket and any check-in row, and
+    decrements `soldcount` to free the capacity — `soldcount`'s own
+    docblock in `db/install.xml` updated accordingly (previously "never
+    decremented, no refund/cancellation flow exists yet").
+  - 82/82 PHPUnit passing (was 64), phpcs/moodlecheck clean. Live-verified
+    via CLI: `confcheckin_group_options()`/`confcheckin_enrol_options()`
+    against a real course's groups/enrolment methods, and the configured
+    delimiter round-tripping through `placeholder::wrap()` and
+    `pdf_generator::default_template()`.
+
+- Phase 4.5 follow-up, `moodle-reviewer` pass fixes: a `moodle-reviewer` pass
+  over both Phase 4.5 and its same-day follow-up found one critical, two high,
+  and two medium findings, all fixed here. No schema change.
+  - **Critical**: neither `classes/form/tickettype_form.php::validation()` nor
+    `tickettypes.php` re-checked that a submitted `groupid`/`enrolid` actually
+    belonged to the confcheckin's own course — only the rendered `<select>`
+    options were course-scoped (`lib.php`'s `confcheckin_group_options()`/
+    `confcheckin_enrol_options()`), so a crafted POST from an editingteacher in
+    one course could link a ticket type to another course's group or
+    enrolment method, letting unrelated cross-course membership churn
+    silently consume capacity and leak that course's users' names/emails via
+    bulk badge downloads. Fixed with a form-level check (`array_key_exists()`
+    against the offered options) and a page-level `record_exists()` recheck
+    scoped to `courseid`, matching this file's existing "never trust a
+    submitted id transitively" pattern already applied to `tickettypeid`.
+  - **High**: `ticket_service::revoke_ticket()` decremented `soldcount` via a
+    plain `get_record()`/`set_field()` pair with no row locking, unlike every
+    other method in this class — two concurrent revokes of different tickets
+    of the same type could both read the same stale `soldcount` and
+    under-decrement. Fixed by locking via the existing `lock_tickettype()` and
+    wrapping the whole method in the class's usual try/catch/rollback.
+  - **High**: `classes/output/mobile.php::mobile_course_view()` never called
+    `require_login()`, relying on `has_capability()` alone — core's own
+    `tool_mobile\external::get_content()` docblock states mobile callbacks are
+    responsible for their own security checks, and `has_capability()` does not
+    enforce course visibility/start-date/enrolment-suspension the way
+    `require_login()` does. Fixed to match `view.php`/`badge.php`'s identical
+    `require_login($course, true, $cm)` call.
+  - **Medium**: the `confcheckin_checkin:scannedby` retention rationale (an
+    operational audit record, never anonymised even on the scanning staff
+    member's own deletion request) previously lived only in code
+    docblocks/`changelog.md`, not anywhere a DPO reviewing a privacy request
+    would see it. The `privacy:metadata:confcheckin_checkin:scannedby` lang
+    string (EN+JA) now states the retention rationale directly.
+  - **Medium**: `revoke_ticket()` had no `try`/`catch`/rollback around its
+    transaction, unlike every sibling method — folded into the locking fix
+    above.
+  - Two low-severity/style items were also addressed: a new
+    `tests/observer_test.php` case proves a capacity-exhausted linked ticket
+    type does not let `issue_granted_ticket()`'s exception escape the event
+    observer (asserted via `assertDebuggingCalled()`); a new
+    `tests/form/tickettype_form_test.php` case proves an out-of-course
+    `groupid`/`enrolid` is rejected. A third low item (no settings-page
+    validation preventing a degenerate delimiter configuration) was left as
+    documented, non-blocking UX polish — not a security issue, since
+    `preg_quote()` is already applied before any regex is built from it.
+  - 84/84 PHPUnit passing (was 82), phpcs/moodlecheck clean.

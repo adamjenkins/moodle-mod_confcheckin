@@ -21,17 +21,72 @@ namespace mod_confcheckin\local;
  * templates (Phase 4.4).
  *
  * A template's stored HTML (confcheckin_template.content) may contain any of the
- * `{{name}}` placeholders build_context() populates; render() replaces each with its
- * value, and silently drops (replaces with '') any `{{name}}` the context does not
- * recognise, rather than leaving the literal placeholder text in the rendered PDF --
- * e.g. a template authored before a given ticket's origin/tickettype context existed,
- * or a simple organiser typo.
+ * placeholders build_context() populates, wrapped in the sitewide configured
+ * delimiter pair (admin setting, Phase 4.5 follow-up: mod_confcheckin/delimiterstart
+ * / mod_confcheckin/delimiterend, default `[[`/`]]`, e.g. `[[fullname]]`) --
+ * render() replaces each with its value, and silently drops (replaces with '') any
+ * placeholder the context does not recognise, rather than leaving the literal
+ * delimited text in the rendered PDF -- e.g. a template authored before a given
+ * ticket's origin/tickettype context existed, or a simple organiser typo.
+ *
+ * The delimiter pair is sitewide, not per-instance: see settings.php's own
+ * docblock for why. Changing it after templates have already been authored means
+ * those templates' existing delimited text (in the OLD delimiter) will no longer
+ * be recognised and must be updated to the new delimiter manually -- this is an
+ * inherent, accepted tradeoff of a configurable delimiter, not a bug.
  *
  * @package    mod_confcheckin
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class placeholder {
+    /** @var string Fallback opening delimiter, used only if the admin setting is unset/blank. */
+    private const DEFAULT_DELIMITER_START = '[[';
+
+    /** @var string Fallback closing delimiter, used only if the admin setting is unset/blank. */
+    private const DEFAULT_DELIMITER_END = ']]';
+
+    /**
+     * The sitewide configured opening delimiter (e.g. `[[`), falling back to
+     * DEFAULT_DELIMITER_START if the admin setting is unset or blank.
+     *
+     * @return string
+     */
+    public static function delimiter_start(): string {
+        $configured = get_config('mod_confcheckin', 'delimiterstart');
+
+        return $configured !== false && trim((string) $configured) !== ''
+            ? (string) $configured
+            : self::DEFAULT_DELIMITER_START;
+    }
+
+    /**
+     * The sitewide configured closing delimiter (e.g. `]]`), falling back to
+     * DEFAULT_DELIMITER_END if the admin setting is unset or blank.
+     *
+     * @return string
+     */
+    public static function delimiter_end(): string {
+        $configured = get_config('mod_confcheckin', 'delimiterend');
+
+        return $configured !== false && trim((string) $configured) !== ''
+            ? (string) $configured
+            : self::DEFAULT_DELIMITER_END;
+    }
+
+    /**
+     * Wraps a placeholder name in the currently-configured delimiter pair, e.g.
+     * `fullname` -> `[[fullname]]` -- used to build example text in
+     * templates.php's "available placeholders" help, so that text always matches
+     * whatever delimiter is actually configured right now.
+     *
+     * @param string $name The placeholder name, e.g. 'fullname'
+     * @return string
+     */
+    public static function wrap(string $name): string {
+        return self::delimiter_start() . $name . self::delimiter_end();
+    }
+
     /**
      * Builds the placeholder => replacement-HTML context for one ticket.
      *
@@ -47,6 +102,11 @@ class placeholder {
      * template using them for a non-presenter simply renders those spots blank rather
      * than showing a stale/wrong presenter's details.
      *
+     * 'coursefullname'/'courseshortname' (Phase 4.5 follow-up) are this instance's
+     * own course's fullname/shortname -- get_course() is cached per-request by
+     * Moodle's own request cache, so calling this per-ticket (e.g. once per
+     * attendee in a bulk badges.php ZIP) does not mean one real DB query each.
+     *
      * @param \stdClass $confcheckin The confcheckin instance record
      * @param \stdClass $tickettype The confcheckin_tickettype record
      * @param \stdClass $ticket The confcheckin_ticket record
@@ -59,11 +119,15 @@ class placeholder {
         \stdClass $ticket,
         \stdClass $user
     ): array {
+        $course = get_course((int) $confcheckin->course);
+
         $context = [
             'fullname'        => s(fullname($user)),
             'email'           => s($user->email),
             'tickettype'      => format_string($tickettype->name),
             'confcheckinname' => format_string($confcheckin->name),
+            'coursefullname'  => format_string($course->fullname),
+            'courseshortname' => format_string($course->shortname),
             'origin'          => get_string('origin:' . $ticket->origin, 'confcheckin'),
             'qrtoken'         => s($ticket->qrtoken),
             'qrcode'          => self::qr_image_tag($ticket->qrtoken),
@@ -125,16 +189,20 @@ class placeholder {
     }
 
     /**
-     * Substitutes every `{{name}}` placeholder in $content with its value in
-     * $context, or '' if $context has no entry for that name.
+     * Substitutes every delimited placeholder (e.g. `[[fullname]]`, using the
+     * currently-configured sitewide delimiter pair -- see delimiter_start()/
+     * delimiter_end()) in $content with its value in $context, or '' if $context
+     * has no entry for that name.
      *
      * @param string $content The template's raw HTML content
      * @param array $context Placeholder name => replacement HTML, from build_context()
      * @return string The rendered HTML, ready for TCPDF's writeHTML()
      */
     public static function render(string $content, array $context): string {
+        $pattern = '/' . preg_quote(self::delimiter_start(), '/') . '(\w+)' . preg_quote(self::delimiter_end(), '/') . '/';
+
         return preg_replace_callback(
-            '/\{\{(\w+)\}\}/',
+            $pattern,
             static fn (array $matches): string => $context[$matches[1]] ?? '',
             $content
         );
