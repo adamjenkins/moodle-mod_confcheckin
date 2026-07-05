@@ -2,6 +2,9 @@
 
 ## [0.1.0] - Unreleased
 
+- Added a Japanese (`lang/ja/confcheckin.php`) language pack, translating every
+  string in `lang/en/confcheckin.php` (verified live: every key present in both,
+  no extras or omissions on either side).
 - Initial scaffold (Phases 4.1-4.2): plugin skeleton (`version.php`,
   `lib.php`, minimal `mod_form.php`/`view.php`), full schema (`confcheckin`,
   `confcheckin_tickettype`, `confcheckin_ticket`, `confcheckin_checkin`,

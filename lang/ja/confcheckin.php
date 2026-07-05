@@ -1,0 +1,125 @@
+<?php
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Language strings for mod_confcheckin (Japanese).
+ *
+ * @package    mod_confcheckin
+ * @copyright  2026 Adam Jenkins <adam@wisecat.net>
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+$string['addpromocode'] = 'プロモコードを追加';
+$string['addtickettype'] = 'チケット種別を追加';
+$string['availabletickettypes'] = '購入可能なチケット種別';
+$string['buyticket'] = 'チケットを購入';
+$string['capacity'] = '定員';
+$string['capacity_help'] = 'この種別のチケットを発行できる最大数です。上限を設けない場合は空欄にしてください。';
+$string['confcheckin:addinstance'] = 'Conference Check-in アクティビティを新規追加する';
+$string['confcheckin:downloadbadges'] = '参加者全員のバッジ/チケットPDFを一括ダウンロードする';
+$string['confcheckin:managetemplates'] = 'バッジ・チケット・領収書・修了証のテンプレートを編集する';
+$string['confcheckin:managetickettypes'] = 'チケット種別とプロモコードを管理する';
+$string['confcheckin:purchase'] = 'チケットを購入・取得する';
+$string['confcheckin:scancheckin'] = 'QRスキャナーを使ってチェックインを記録する';
+$string['confcheckin:viewowncertificate'] = '自分の参加証明書をダウンロードする';
+$string['confirmdeletepromocode'] = 'プロモコード「{$a}」を削除しますか？ 既にこのコードで発行されたチケットには影響しません。';
+$string['confirmdeletetickettype'] = 'チケット種別「{$a}」を削除しますか？ 既に発行されたチケットには影響しません。';
+$string['confprogramcmid'] = 'Conference Program アクティビティ';
+$string['confprogramcmid_help'] = '発表者限定チケットの対象資格を判定する際に参照する Conference Program アクティビティです。あるユーザーが（手動入力の共同発表者ではなく）Moodle アカウントとして登録された発表者として、このアクティビティで採択された応募に1件でも名前が載っていれば、「発表者限定」チケット種別の対象資格があるとみなされます。任意項目です——未設定の場合、「発表者限定」チケット種別は誰も購入・取得できません。';
+$string['currency'] = '通貨';
+$string['editpromocode'] = 'プロモコードを編集';
+$string['edittickettype'] = 'チケット種別を編集';
+$string['error:invalidcapacity'] = '定員は1以上の整数を入力するか、無制限にする場合は空欄にしてください。';
+$string['error:invalidconfprogramcmid'] = 'それはこのコース内の Conference Program アクティビティではありません。';
+$string['error:invalidcurrency'] = '有効な通貨を選択してください。';
+$string['error:invalidmaxuses'] = '最大利用回数は1以上の整数を入力するか、無制限にする場合は空欄にしてください。';
+$string['error:invalidprice'] = '0以上の有効な価格を入力してください（例: 0.00 や 49.99）。';
+$string['error:invalidpromocode'] = 'そのプロモコードは無効です。';
+$string['error:invalidtickettype'] = 'そのチケット種別が見つかりませんでした。';
+$string['error:nopaymentaccount'] = 'このアクティビティにはまだ決済アカウントが設定されていないため、有料のチケット種別は現在購入できません。コースの主催者にお問い合わせください。';
+$string['error:notpresenteronly'] = 'そのチケット種別は対象資格のある発表者のみが購入できます。';
+$string['error:promocodeexhausted'] = 'そのプロモコードは既に利用可能回数の上限まで使用されています。';
+$string['error:promocodeexpired'] = 'そのプロモコードは有効期限が切れています。';
+$string['error:promocodenotunique'] = 'そのコードはこのアクティビティで既に使用されています。別のコードを選んでください。';
+$string['error:tickettypenotfree'] = 'そのチケット種別は無料ではありません。';
+$string['error:tickettypesoldout'] = 'そのチケット種別は完売しました。';
+$string['error:validtobeforevalidfrom'] = '「有効期限」は「有効開始日」より前にはできません。';
+$string['free'] = '無料';
+$string['getfreeticket'] = '無料チケットを取得';
+$string['grantsticketype'] = '付与されるチケット種別';
+$string['managepromocodes'] = 'プロモコードの管理';
+$string['managetickettypes'] = 'チケット種別の管理';
+$string['maxuses'] = '最大利用回数';
+$string['maxuses_help'] = 'このコードを合計で利用できる最大回数です。上限を設けない場合は空欄にしてください。';
+$string['modulename'] = 'Conference Check-in';
+$string['modulename_help'] = 'Conference Check-in アクティビティは、カンファレンスのチケットを販売・発行し、QRコード付きバッジを生成し、QRスキャナーによる参加記録を行います。チケット種別は（Conference Program アクティビティとの連携により）採択された応募の発表者に限定したり、プロモコードで販売したり、主催者が編集したバッジ・チケット・領収書・修了証のテンプレートを設定したりできます。参加者はチェックイン後に参加証明書をダウンロードできます。';
+$string['modulenameplural'] = 'Conference Check-in';
+$string['mytickets'] = 'あなたのチケット';
+$string['noinstances'] = 'このコースにはまだ Conference Check-in アクティビティがありません。';
+$string['nopromocodes'] = 'まだプロモコードが追加されていません。';
+$string['notickettypes'] = 'まだチケット種別が追加されていません。';
+$string['notickettypesyet'] = 'まだチケット種別が追加されていません。先に追加してください。';
+$string['origin'] = '取得方法';
+$string['origin:free'] = '無料';
+$string['origin:promo'] = 'プロモコード';
+$string['origin:purchase'] = '購入';
+$string['paymentaccountid'] = '決済アカウント';
+$string['paymentaccountid_help'] = 'このインスタンスの有料チケット種別の支払い先となる決済アカウントです。価格が0円より大きいチケット種別を販売する場合にのみ必要です。無料チケットやプロモコードによるチケットではこの設定は使用されません。';
+$string['pluginadministration'] = 'Conference Check-in の管理';
+$string['pluginname'] = 'Conference Check-in';
+$string['presenteronly'] = '発表者限定';
+$string['presenteronly_help'] = 'このチケット種別を、連携している Conference Program アクティビティで採択された応募に、（Moodle アカウントとして登録された発表者として）1件以上名前が載っているユーザーに限定します。';
+$string['price'] = '価格';
+$string['price_help'] = 'チケットの価格を小数で入力します（例: 49.99）。無料のチケット種別にする場合は 0.00 を指定してください。この場合、決済システムを経由せず直接発行されます。';
+$string['privacy:metadata'] = 'Conference Check-in プラグインは、発行されたチケットと記録されたチェックインに関する個人情報を、自身のテーブルに保存します。チケット種別・テンプレート・プロモコードの設定には個人情報は含まれません。決済金額・ステータスはこのプラグインでは一切保存されず、core_payment 自身のテーブルに保存されます。';
+$string['privacy:metadata:confcheckin_checkin'] = '発行済みチケットに対して記録されたチェックインイベント。';
+$string['privacy:metadata:confcheckin_checkin:scannedby'] = 'このチェックインを記録したQRスキャンを行ったユーザーのID。';
+$string['privacy:metadata:confcheckin_checkin:timecreated'] = 'チェックインが記録された日時。';
+$string['privacy:metadata:confcheckin_ticket'] = '発行済みチケット。Conference Check-in インスタンスごと、参加者ごとに1行。';
+$string['privacy:metadata:confcheckin_ticket:origin'] = 'チケットの取得方法（購入・無料・プロモコード）。';
+$string['privacy:metadata:confcheckin_ticket:qrtoken'] = 'このチケットのQRコードを識別する一意のトークン。';
+$string['privacy:metadata:confcheckin_ticket:timecreated'] = 'チケットが発行された日時。';
+$string['privacy:metadata:confcheckin_ticket:timemodified'] = 'チケットが最後に更新された日時。';
+$string['privacy:metadata:confcheckin_ticket:userid'] = 'チケットが発行されたユーザーのID。';
+$string['promocode'] = 'プロモコード';
+$string['promocodeadded'] = 'プロモコードを追加しました。';
+$string['promocodedeleted'] = 'プロモコードを削除しました。';
+$string['promocodeupdated'] = 'プロモコードを更新しました。';
+$string['purchased'] = '日付';
+$string['purchasedescription'] = 'チケット: {$a}';
+$string['purchaseticket'] = 'チケットを購入・取得する';
+$string['redeem'] = '利用する';
+$string['redeempromocode'] = 'プロモコードをお持ちですか？';
+$string['scaffoldnotice'] = 'チケット購入はまだ利用できません。このアクティビティのいずれの部分を閲覧できる権限もまだありません。';
+$string['scaffoldnoticebadges'] = 'バッジ・修了証のダウンロードおよびQRチェックインスキャナーは現在準備中です。';
+$string['soldout'] = '完売';
+$string['sortorder'] = '表示順';
+$string['ticketissued'] = 'チケットが発行されました。';
+$string['tickettypeadded'] = 'チケット種別を追加しました。';
+$string['tickettypedeleted'] = 'チケット種別を削除しました。';
+$string['tickettypename'] = 'チケット種別名';
+$string['tickettypeupdated'] = 'チケット種別を更新しました。';
+$string['timeexpires'] = '有効期限';
+$string['timeexpires_help'] = 'このコードが利用できなくなる日付です。無期限にする場合は空欄にしてください。';
+$string['unlimited'] = '無制限';
+$string['uses'] = '利用回数';
+$string['validfrom'] = '有効開始日';
+$string['validfrom_help'] = 'このチケット種別で入場が可能になる日付です。現段階では記録目的のみで、チェックイン時には強制されません。';
+$string['validfromdate'] = '{$a}から有効。';
+$string['validto'] = '有効終了日';
+$string['validto_help'] = 'このチケット種別で入場が可能な最終日です。現段階では記録目的のみで、チェックイン時には強制されません。';
+$string['validtodate'] = '{$a}まで有効。';
+$string['visible'] = '表示';
+$string['visible_help'] = 'このチケット種別を購入ページに表示するかどうかです。非表示にしてもチケット種別自体は削除されず、既に発行済みのチケットにも影響しません。';
