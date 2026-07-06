@@ -2,6 +2,15 @@
 
 ## [0.1.0] - Unreleased
 
+- User request (2026-07-06): added `composer.json` so the plugin can be
+  published on Packagist per the
+  [Moodle Composer guide](https://moodledev.io/docs/5.2/guides/composer) --
+  `moodle-mod` type, requires `moodle/moodle:^5.2` (matching this plugin's own
+  `version.php` floor) and `moodle/composer-installer`. Also fixed the CI
+  matrix: the push-triggered job was testing `MOODLE_500_STABLE`/
+  `MOODLE_501_STABLE` alongside `MOODLE_502_STABLE`, but `version.php` has
+  always required 5.2, so those older branches could never actually install
+  the plugin -- narrowed to `MOODLE_502_STABLE` only, matching the PR matrix.
 - User request (2026-07-06): "Also make sure backup/restore/reset all works fine
   with all plugins." `FEATURE_BACKUP_MOODLE2` flipped to true; new
   `backup/moodle2/*.php` step classes cover every table (ticket types, promo

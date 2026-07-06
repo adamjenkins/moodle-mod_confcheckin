@@ -1,0 +1,10 @@
+{
+    "name": "adamjenkins/moodle-mod_confcheckin",
+    "description": "Conference Check-in - a Moodle activity module for selling/issuing conference tickets, generating QR-coded badges, and recording attendance.",
+    "type": "moodle-mod",
+    "require": {
+        "moodle/moodle": "^5.2",
+        "moodle/composer-installer": "*"
+    },
+    "license": "GPL-3.0-or-later"
+}
