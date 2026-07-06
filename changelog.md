@@ -25,6 +25,17 @@
   restore_confcheckin_test.php`), not just a unit test of the stepslib classes.
   96/96 PHPUnit passing (was 94, +2 new), phpcs/moodlecheck clean, EN/JA lang
   parity verified (163/163 keys).
+- Cross-plugin backup/restore integration coverage added
+  (`tests/backup/restore_full_chain_test.php`, no production code change):
+  verifies all four Conference Tools activities together, in one course, still
+  resolve every cross-activity reference correctly when restored as a whole --
+  including a restored presenter ticket type's eligibility check, which itself
+  depends on mod_confcheckin -> mod_confprogram -> mod_confsubmissions all
+  resolving correctly. Also verifies a course backup that only includes a
+  subset of the four activities (deliberately excluding mod_confprogram)
+  restores without error, with `confcheckin.confprogramcmid` left `null`
+  rather than crashing or pointing at an unrelated activity. 98/98 PHPUnit
+  passing (was 96, +2 new).
 - User request (2026-07-05/06): "In confcheckin, add the ability to require a
   group/enrolment method as an eligibility requirement for a ticket."
   `confcheckin_tickettype` gains `eligibilitygroupid`/`eligibilityenrolid`
