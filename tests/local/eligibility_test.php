@@ -283,4 +283,117 @@ final class eligibility_test extends advanced_testcase {
         $single = eligibility::find_presenter_submission((int) $presenter->id, $confprogramcmid);
         $this->assertSame($firstid, (int) $single->id);
     }
+
+    /**
+     * meets_group_or_enrol_requirement() (user request, 2026-07-06): a ticket type
+     * with neither eligibilitygroupid nor eligibilityenrolid set has no restriction
+     * at all -- every user meets it.
+     */
+    public function test_no_group_or_enrol_requirement_means_everyone_is_eligible(): void {
+        $this->resetAfterTest();
+
+        $user = $this->getDataGenerator()->create_user();
+        $tickettype = (object) ['eligibilitygroupid' => null, 'eligibilityenrolid' => null];
+
+        $this->assertTrue(eligibility::meets_group_or_enrol_requirement((int) $user->id, $tickettype));
+    }
+
+    /**
+     * meets_group_or_enrol_requirement() with eligibilitygroupid set: only a member
+     * of that specific group meets the requirement.
+     */
+    public function test_group_requirement_checks_group_membership(): void {
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $group = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
+        $member = $this->getDataGenerator()->create_user();
+        $nonmember = $this->getDataGenerator()->create_user();
+        // Groups_add_member() silently no-ops for a user not enrolled in the group's
+        // own course -- see \mod_confcheckin\local\ticket_service_test's own note on
+        // this same gotcha.
+        $this->getDataGenerator()->enrol_user($member->id, $course->id);
+        groups_add_member($group->id, $member->id);
+
+        $tickettype = (object) ['eligibilitygroupid' => $group->id, 'eligibilityenrolid' => null];
+
+        $this->assertTrue(eligibility::meets_group_or_enrol_requirement((int) $member->id, $tickettype));
+        $this->assertFalse(eligibility::meets_group_or_enrol_requirement((int) $nonmember->id, $tickettype));
+    }
+
+    /**
+     * meets_group_or_enrol_requirement() with eligibilityenrolid set: only a user
+     * enrolled via that specific enrolment method instance meets the requirement.
+     */
+    public function test_enrol_requirement_checks_enrolment_method(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $course = $this->getDataGenerator()->create_course();
+        $enrolled = $this->getDataGenerator()->create_user();
+        $unenrolled = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($enrolled->id, $course->id, 'student', 'manual');
+
+        $enrolinstance = $DB->get_record('enrol', ['courseid' => $course->id, 'enrol' => 'manual'], '*', MUST_EXIST);
+        $tickettype = (object) ['eligibilitygroupid' => null, 'eligibilityenrolid' => $enrolinstance->id];
+
+        $this->assertTrue(eligibility::meets_group_or_enrol_requirement((int) $enrolled->id, $tickettype));
+        $this->assertFalse(eligibility::meets_group_or_enrol_requirement((int) $unenrolled->id, $tickettype));
+    }
+
+    /**
+     * is_eligible_for_tickettype() ANDs presenteronly with the group/enrolment
+     * requirement: a user must satisfy BOTH if both are configured on the same
+     * ticket type, not either alone.
+     */
+    public function test_is_eligible_for_tickettype_ands_presenteronly_and_group_requirement(): void {
+        $this->resetAfterTest();
+
+        [$confsubmissions, $confprogram, $confprogramcmid] = $this->create_program_fixture();
+        $group = $this->getDataGenerator()->create_group(['courseid' => $confprogram->course]);
+
+        $presenterinbothgroups = $this->getDataGenerator()->create_user();
+        $presenteronly = $this->getDataGenerator()->create_user();
+        $groupmemberonly = $this->getDataGenerator()->create_user();
+
+        // Groups_add_member() silently no-ops for a user not enrolled in the group's
+        // own course.
+        $this->getDataGenerator()->enrol_user($presenterinbothgroups->id, $confprogram->course);
+        $this->getDataGenerator()->enrol_user($groupmemberonly->id, $confprogram->course);
+        groups_add_member($group->id, $presenterinbothgroups->id);
+        groups_add_member($group->id, $groupmemberonly->id);
+
+        $this->create_submission_with_speakers(
+            $confsubmissions,
+            [['userid' => $presenterinbothgroups->id]],
+            $confprogram
+        );
+        $this->create_submission_with_speakers(
+            $confsubmissions,
+            [['userid' => $presenteronly->id]],
+            $confprogram
+        );
+
+        $tickettype = (object) [
+            'presenteronly'      => 1,
+            'eligibilitygroupid' => $group->id,
+            'eligibilityenrolid' => null,
+        ];
+
+        $this->assertTrue(eligibility::is_eligible_for_tickettype(
+            (int) $presenterinbothgroups->id,
+            $tickettype,
+            $confprogramcmid
+        ));
+        $this->assertFalse(eligibility::is_eligible_for_tickettype(
+            (int) $presenteronly->id,
+            $tickettype,
+            $confprogramcmid
+        ));
+        $this->assertFalse(eligibility::is_eligible_for_tickettype(
+            (int) $groupmemberonly->id,
+            $tickettype,
+            $confprogramcmid
+        ));
+    }
 }

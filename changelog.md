@@ -2,6 +2,24 @@
 
 ## [0.1.0] - Unreleased
 
+- User request (2026-07-05/06): "In confcheckin, add the ability to require a
+  group/enrolment method as an eligibility requirement for a ticket."
+  `confcheckin_tickettype` gains `eligibilitygroupid`/`eligibilityenrolid`
+  (mutually exclusive, editable in a new "Eligibility" section of the ticket
+  type form) -- distinct from the existing `groupid`/`enrolid` auto-grant
+  fields, which issue a ticket automatically rather than gate self-service
+  purchase. `\mod_confcheckin\local\eligibility::is_eligible_for_tickettype()`
+  is the single combined gate (ANDing this new requirement with the existing
+  `presenteronly` check) consumed by both `purchase.php` (hides an ineligible
+  ticket type from the list/free-claim entirely) and, new here,
+  `ticket_service::issue_free_ticket()`/`issue_purchased_ticket()` themselves
+  -- the latter closes a pre-existing gap where a paid `presenteronly` ticket
+  type had no server-side re-check at the actual payment-delivery layer, only
+  UI-hiding in `purchase.php`. A promo code redemption still bypasses every
+  eligibility check entirely (presenteronly and the new requirement alike),
+  same precedent as before: an organiser handing someone a code is itself the
+  authorisation. 94/94 PHPUnit passing, phpcs/moodlecheck clean, EN/JA lang
+  parity verified (162/162 keys).
 - Added a Japanese (`lang/ja/confcheckin.php`) language pack, translating every
   string in `lang/en/confcheckin.php` (verified live: every key present in both,
   no extras or omissions on either side).

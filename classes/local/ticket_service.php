@@ -97,7 +97,8 @@ class ticket_service {
      * @param int $userid The user id the ticket is issued to
      * @return \stdClass The newly-inserted confcheckin_ticket record
      * @throws \moodle_exception if the ticket type does not belong to this instance, is not
-     *         actually price-zero, or has no remaining capacity
+     *         actually price-zero, has no remaining capacity, or $userid is not eligible
+     *         (presenteronly / group / enrolment-method requirement)
      */
     public static function issue_free_ticket(int $confcheckinid, int $tickettypeid, int $userid): \stdClass {
         global $DB;
@@ -113,6 +114,8 @@ class ticket_service {
                 // defence-in-depth re-check, not the only gate).
                 throw new \moodle_exception('error:tickettypenotfree', 'confcheckin');
             }
+
+            self::require_eligible($confcheckinid, $tickettype, $userid);
 
             self::reserve_capacity_locked($tickettype);
 
@@ -188,8 +191,13 @@ class ticket_service {
      * @param int $tickettypeid The confcheckin_tickettype id (must belong to $confcheckinid)
      * @param int $userid The user id the ticket is issued to
      * @return \stdClass The newly-inserted confcheckin_ticket record
-     * @throws \moodle_exception if the ticket type does not belong to this instance, or has
-     *         no remaining capacity
+     * @throws \moodle_exception if the ticket type does not belong to this instance, has no
+     *         remaining capacity, or $userid is not eligible (presenteronly / group /
+     *         enrolment-method requirement) -- this is the only place a paid ticket is
+     *         actually created, so this re-check (added 2026-07-06 alongside the new
+     *         group/enrolment eligibility requirement) is what stops a crafted direct
+     *         core_payment request from buying an ineligible ticket type that
+     *         purchase.php merely hides from the UI
      */
     public static function issue_purchased_ticket(int $confcheckinid, int $tickettypeid, int $userid): \stdClass {
         global $DB;
@@ -197,6 +205,8 @@ class ticket_service {
         $transaction = $DB->start_delegated_transaction();
         try {
             $tickettype = self::lock_tickettype($confcheckinid, $tickettypeid);
+
+            self::require_eligible($confcheckinid, $tickettype, $userid);
 
             self::reserve_capacity_locked($tickettype);
 
@@ -486,6 +496,36 @@ class ticket_service {
         $promocode = $DB->get_record_sql($sql, ['confcheckin' => $confcheckinid, 'code' => $code]);
 
         return $promocode ?: null;
+    }
+
+    /**
+     * Re-checks (server-side, defence-in-depth) that a user is eligible for a ticket
+     * type before it is actually issued -- see eligibility::is_eligible_for_tickettype()
+     * for what "eligible" covers (presenteronly, and the group/enrolment-method
+     * requirement added 2026-07-06). Called from issue_free_ticket() and
+     * issue_purchased_ticket(); deliberately NOT called from redeem_promocode() or
+     * issue_granted_ticket() -- a promo code redemption is its own independent
+     * authorisation that bypasses eligibility entirely (same precedent purchase.php's
+     * docblock already documents for presenteronly), and a granted ticket's whole
+     * premise IS the (different) groupid/enrolid auto-grant condition, not this gate.
+     *
+     * @param int $confcheckinid The confcheckin instance id
+     * @param \stdClass $tickettype A confcheckin_tickettype record (already locked by the caller)
+     * @param int $userid The user id the ticket would be issued to
+     * @return void
+     * @throws \moodle_exception if $userid does not meet the ticket type's eligibility requirements
+     */
+    private static function require_eligible(int $confcheckinid, \stdClass $tickettype, int $userid): void {
+        global $DB;
+
+        $confcheckin = $DB->get_record('confcheckin', ['id' => $confcheckinid]);
+        $confprogramcmid = ($confcheckin && !empty($confcheckin->confprogramcmid))
+            ? (int) $confcheckin->confprogramcmid
+            : null;
+
+        if (!eligibility::is_eligible_for_tickettype($userid, $tickettype, $confprogramcmid)) {
+            throw new \moodle_exception('error:noteligible', 'confcheckin');
+        }
     }
 
     /**

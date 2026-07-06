@@ -26,11 +26,13 @@
  *   (origin = 'purchase', ticket created in classes/payment/service_provider.php's
  *   deliver_order() once payment succeeds).
  *
- * presenteronly ticket types are hidden from the list entirely for a user who is
- * not eligible per classes/local/eligibility.php, UNLESS a promo code is used to
+ * A ticket type with any eligibility requirement (presenteronly, and/or the
+ * group/enrolment-method requirement added 2026-07-06 -- see
+ * classes/local/eligibility.php::is_eligible_for_tickettype()) is hidden from the
+ * list entirely for a user who does not meet it, UNLESS a promo code is used to
  * claim one directly -- see the 'promo' action handler below for why a promo code
- * is treated as its own, independent authorisation that bypasses the presenter
- * check (an organiser handing someone a specific code is itself the grant).
+ * is treated as its own, independent authorisation that bypasses eligibility
+ * entirely (an organiser handing someone a specific code is itself the grant).
  *
  * @package    mod_confcheckin
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
@@ -63,7 +65,6 @@ $PAGE->set_heading(format_string($course->fullname));
 $PAGE->set_context($context);
 
 $confprogramcmid = isset($confcheckin->confprogramcmid) ? (int) $confcheckin->confprogramcmid : null;
-$iseligiblepresenter = eligibility::is_presenter((int) $USER->id, $confprogramcmid);
 
 // Handle a direct free-ticket claim.
 if ($action === 'free') {
@@ -76,11 +77,12 @@ if ($action === 'free') {
         if (!$tickettype->visible) {
             throw new \moodle_exception('error:invalidtickettype', 'confcheckin');
         }
-        if ($tickettype->presenteronly && !$iseligiblepresenter) {
+        if (!eligibility::is_eligible_for_tickettype((int) $USER->id, $tickettype, $confprogramcmid)) {
             // Defence-in-depth: the UI already hides this ticket type's "Get ticket"
             // button for an ineligible user, but a crafted POST must be rejected here
             // too -- never trust that hiding a control server-side-enforces anything.
-            throw new \moodle_exception('error:notpresenteronly', 'confcheckin');
+            // ticket_service::issue_free_ticket() re-checks this again itself.
+            throw new \moodle_exception('error:noteligible', 'confcheckin');
         }
 
         ticket_service::issue_free_ticket($confcheckin->id, $tickettypeid, (int) $USER->id);
@@ -196,7 +198,7 @@ if (!$tickettypes) {
 $paymentjsloaded = false;
 
 foreach ($tickettypes as $tickettype) {
-    if ($tickettype->presenteronly && !$iseligiblepresenter) {
+    if (!eligibility::is_eligible_for_tickettype((int) $USER->id, $tickettype, $confprogramcmid)) {
         // Hidden entirely (not merely disabled) for an ineligible user: this ticket
         // type simply isn't an option for them, per the spec.
         continue;

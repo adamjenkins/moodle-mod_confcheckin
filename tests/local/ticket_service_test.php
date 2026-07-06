@@ -325,6 +325,58 @@ final class ticket_service_test extends advanced_testcase {
     }
 
     /**
+     * issue_free_ticket() re-checks the eligibility group requirement (user request,
+     * 2026-07-06) server-side: a non-member is rejected even though nothing upstream
+     * (e.g. purchase.php) is trusted to have already filtered them out.
+     */
+    public function test_issue_free_ticket_rejects_ineligible_group_requirement(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $confcheckinid = $this->create_confcheckin();
+        $courseid = (int) $DB->get_field('confcheckin', 'course', ['id' => $confcheckinid]);
+        $group = $this->getDataGenerator()->create_group(['courseid' => $courseid]);
+        $tickettypeid = $this->create_tickettype($confcheckinid, ['eligibilitygroupid' => $group->id]);
+
+        $member = $this->getDataGenerator()->create_user();
+        // Groups_add_member() silently no-ops for a user not enrolled in the group's
+        // own course.
+        $this->getDataGenerator()->enrol_user($member->id, $courseid);
+        groups_add_member($group->id, $member->id);
+        $nonmember = $this->getDataGenerator()->create_user();
+
+        $ticket = ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $member->id);
+        $this->assertSame('free', $ticket->origin);
+
+        $this->expectException(\moodle_exception::class);
+        ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $nonmember->id);
+    }
+
+    /**
+     * issue_purchased_ticket() re-checks the same eligibility group requirement --
+     * this is the defence-in-depth fix that stops a crafted direct core_payment
+     * request from buying an ineligible ticket type purchase.php merely hides from
+     * the UI (see that method's own docblock).
+     */
+    public function test_issue_purchased_ticket_rejects_ineligible_group_requirement(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $confcheckinid = $this->create_confcheckin();
+        $courseid = (int) $DB->get_field('confcheckin', 'course', ['id' => $confcheckinid]);
+        $group = $this->getDataGenerator()->create_group(['courseid' => $courseid]);
+        $tickettypeid = $this->create_tickettype(
+            $confcheckinid,
+            ['price' => '50.00', 'eligibilitygroupid' => $group->id]
+        );
+
+        $nonmember = $this->getDataGenerator()->create_user();
+
+        $this->expectException(\moodle_exception::class);
+        ticket_service::issue_purchased_ticket($confcheckinid, $tickettypeid, (int) $nonmember->id);
+    }
+
+    /**
      * generate_qrtoken() produces distinct, well-formed 64-character hex tokens across
      * repeated calls (a basic sanity check that it is not a constant or predictable
      * sequence).

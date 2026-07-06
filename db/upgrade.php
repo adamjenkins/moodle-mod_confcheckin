@@ -99,5 +99,25 @@ function xmldb_confcheckin_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026070504, 'confcheckin');
     }
 
+    if ($oldversion < 2026070601) {
+        // Group/enrolment-method eligibility requirement (user request, 2026-07-06):
+        // distinct from groupid/enrolid above (which auto-grant a ticket), these gate
+        // whether a user may purchase/claim this ticket type at all via the
+        // self-service purchase.php flow -- see classes/local/eligibility.php.
+        $table = new xmldb_table('confcheckin_tickettype');
+
+        $field = new xmldb_field('eligibilitygroupid', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'enrolid');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $field = new xmldb_field('eligibilityenrolid', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'eligibilitygroupid');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026070601, 'confcheckin');
+    }
+
     return true;
 }

@@ -61,8 +61,10 @@ final class tickettype_form_test extends advanced_testcase {
             'validto'       => 0,
             'sortorder'     => 0,
             'visible'       => 1,
-            'groupid'       => 0,
-            'enrolid'       => 0,
+            'groupid'             => 0,
+            'enrolid'             => 0,
+            'eligibilitygroupid'  => 0,
+            'eligibilityenrolid'  => 0,
         ], $overrides);
     }
 
@@ -186,5 +188,45 @@ final class tickettype_form_test extends advanced_testcase {
 
         $errors = $form->validation($this->base_data(['groupid' => 0, 'enrolid' => 999]), []);
         $this->assertArrayHasKey('enrolid', $errors);
+    }
+
+    /**
+     * The eligibility requirement's group and enrolment method are mutually
+     * exclusive (user request, 2026-07-06), same rule as auto-grant's groupid/enrolid
+     * above but a wholly separate pair of fields.
+     */
+    public function test_eligibility_group_and_enrol_are_mutually_exclusive(): void {
+        $this->resetAfterTest();
+
+        $form = new tickettype_form(null, self::FORM_CUSTOMDATA);
+
+        $errors = $form->validation($this->base_data(['eligibilitygroupid' => 5, 'eligibilityenrolid' => 7]), []);
+        $this->assertArrayHasKey('eligibilityenrolid', $errors);
+
+        $errors = $form->validation($this->base_data(['eligibilitygroupid' => 5, 'eligibilityenrolid' => 0]), []);
+        $this->assertArrayNotHasKey('eligibilityenrolid', $errors);
+
+        $errors = $form->validation($this->base_data(['eligibilitygroupid' => 0, 'eligibilityenrolid' => 7]), []);
+        $this->assertArrayNotHasKey('eligibilityenrolid', $errors);
+
+        $errors = $form->validation($this->base_data(['eligibilitygroupid' => 0, 'eligibilityenrolid' => 0]), []);
+        $this->assertSame([], $errors);
+    }
+
+    /**
+     * An eligibilitygroupid/eligibilityenrolid not among the options this course's
+     * select was actually rendered with is rejected, same IDOR-prevention rule as
+     * auto-grant's groupid/enrolid above.
+     */
+    public function test_eligibility_id_not_in_offered_options_is_rejected(): void {
+        $this->resetAfterTest();
+
+        $form = new tickettype_form(null, self::FORM_CUSTOMDATA);
+
+        $errors = $form->validation($this->base_data(['eligibilitygroupid' => 999, 'eligibilityenrolid' => 0]), []);
+        $this->assertArrayHasKey('eligibilitygroupid', $errors);
+
+        $errors = $form->validation($this->base_data(['eligibilitygroupid' => 0, 'eligibilityenrolid' => 999]), []);
+        $this->assertArrayHasKey('eligibilityenrolid', $errors);
     }
 }

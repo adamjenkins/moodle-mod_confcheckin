@@ -104,8 +104,10 @@ if ($edittickettype) {
         'validto'       => $edittickettype->validto,
         'sortorder'     => $edittickettype->sortorder,
         'visible'       => $edittickettype->visible,
-        'groupid'       => $edittickettype->groupid ?? 0,
-        'enrolid'       => $edittickettype->enrolid ?? 0,
+        'groupid'             => $edittickettype->groupid ?? 0,
+        'enrolid'             => $edittickettype->enrolid ?? 0,
+        'eligibilitygroupid'  => $edittickettype->eligibilitygroupid ?? 0,
+        'eligibilityenrolid'  => $edittickettype->eligibilityenrolid ?? 0,
     ]);
 }
 
@@ -119,32 +121,49 @@ if ($tickettypeform->is_cancelled()) {
 
     $groupid = !empty($formdata->groupid) ? (int) $formdata->groupid : null;
     $enrolid = !empty($formdata->enrolid) ? (int) $formdata->enrolid : null;
+    $eligibilitygroupid = !empty($formdata->eligibilitygroupid) ? (int) $formdata->eligibilitygroupid : null;
+    $eligibilityenrolid = !empty($formdata->eligibilityenrolid) ? (int) $formdata->eligibilityenrolid : null;
 
-    // Re-verify server-side that groupid/enrolid belong to this course, even though
-    // tickettype_form::validation() already checked them against the rendered select
-    // options -- the same "never trust a stored/submitted id transitively without
-    // re-verifying" rule this file already applies to tickettypeid above.
+    // Re-verify server-side that groupid/enrolid/eligibilitygroupid/eligibilityenrolid
+    // belong to this course, even though tickettype_form::validation() already checked
+    // them against the rendered select options -- the same "never trust a
+    // stored/submitted id transitively without re-verifying" rule this file already
+    // applies to tickettypeid above.
     if ($groupid !== null && !$DB->record_exists('groups', ['id' => $groupid, 'courseid' => $course->id])) {
         throw new \moodle_exception('error:invalidautogrant', 'confcheckin');
     }
     if ($enrolid !== null && !$DB->record_exists('enrol', ['id' => $enrolid, 'courseid' => $course->id])) {
         throw new \moodle_exception('error:invalidautogrant', 'confcheckin');
     }
+    if (
+        $eligibilitygroupid !== null
+            && !$DB->record_exists('groups', ['id' => $eligibilitygroupid, 'courseid' => $course->id])
+    ) {
+        throw new \moodle_exception('error:invalidautogrant', 'confcheckin');
+    }
+    if (
+        $eligibilityenrolid !== null
+            && !$DB->record_exists('enrol', ['id' => $eligibilityenrolid, 'courseid' => $course->id])
+    ) {
+        throw new \moodle_exception('error:invalidautogrant', 'confcheckin');
+    }
 
     $record = (object) [
-        'confcheckin'   => $confcheckin->id,
-        'name'          => $formdata->name,
-        'price'         => number_format($price, 2, '.', ''),
-        'currency'      => $formdata->currency,
-        'capacity'      => $capacityraw === '' ? null : (int) $capacityraw,
-        'presenteronly' => (int) $formdata->presenteronly,
-        'validfrom'     => !empty($formdata->validfrom) ? (int) $formdata->validfrom : null,
-        'validto'       => !empty($formdata->validto) ? (int) $formdata->validto : null,
-        'sortorder'     => (int) $formdata->sortorder,
-        'visible'       => (int) $formdata->visible,
-        'groupid'       => $groupid,
-        'enrolid'       => $enrolid,
-        'timemodified'  => time(),
+        'confcheckin'         => $confcheckin->id,
+        'name'                => $formdata->name,
+        'price'               => number_format($price, 2, '.', ''),
+        'currency'            => $formdata->currency,
+        'capacity'            => $capacityraw === '' ? null : (int) $capacityraw,
+        'presenteronly'       => (int) $formdata->presenteronly,
+        'validfrom'           => !empty($formdata->validfrom) ? (int) $formdata->validfrom : null,
+        'validto'             => !empty($formdata->validto) ? (int) $formdata->validto : null,
+        'sortorder'           => (int) $formdata->sortorder,
+        'visible'             => (int) $formdata->visible,
+        'groupid'             => $groupid,
+        'enrolid'             => $enrolid,
+        'eligibilitygroupid'  => $eligibilitygroupid,
+        'eligibilityenrolid'  => $eligibilityenrolid,
+        'timemodified'        => time(),
     ];
 
     $wasediting = (bool) $tickettypeid;
@@ -203,6 +222,7 @@ if ($tickettypes) {
         get_string('presenteronly', 'confcheckin'),
         get_string('visible', 'confcheckin'),
         get_string('autogrant', 'confcheckin'),
+        get_string('eligibilityheader', 'confcheckin'),
         '',
     ];
     $table->attributes['class'] = 'generaltable';
@@ -225,6 +245,21 @@ if ($tickettypes) {
             $enrolplugin = $enrolinstance ? enrol_get_plugin($enrolinstance->enrol) : null;
             $enrolname = $enrolplugin ? $enrolplugin->get_instance_name($enrolinstance) : null;
             $autograntlabel = get_string('autograntenrolvalue', 'confcheckin', $enrolname ?? '?');
+        }
+
+        $eligibilitylabel = '-';
+        if (!empty($tickettype->eligibilitygroupid)) {
+            $groupname = $groupnames[$tickettype->eligibilitygroupid]->name ?? null;
+            $eligibilitylabel = get_string(
+                'eligibilitygroupvalue',
+                'confcheckin',
+                $groupname !== null ? format_string($groupname) : get_string('error:invalidtickettype', 'confcheckin')
+            );
+        } else if (!empty($tickettype->eligibilityenrolid)) {
+            $enrolinstance = $DB->get_record('enrol', ['id' => $tickettype->eligibilityenrolid]);
+            $enrolplugin = $enrolinstance ? enrol_get_plugin($enrolinstance->enrol) : null;
+            $enrolname = $enrolplugin ? $enrolplugin->get_instance_name($enrolinstance) : null;
+            $eligibilitylabel = get_string('eligibilityenrolvalue', 'confcheckin', $enrolname ?? '?');
         }
 
         $editurl = new moodle_url($pageurl, ['edit' => $tickettype->id]);
@@ -250,6 +285,7 @@ if ($tickettypes) {
             $tickettype->presenteronly ? get_string('yes') : get_string('no'),
             $tickettype->visible ? get_string('yes') : get_string('no'),
             $autograntlabel,
+            $eligibilitylabel,
             $editlink . ' ' . $deletelink,
         ];
     }

@@ -24,6 +24,11 @@ require_once($CFG->dirroot . '/mod/confcheckin/lib.php');
 /**
  * Add/edit ticket type mini-form used on tickettypes.php.
  *
+ * eligibilitygroupid/eligibilityenrolid (user request, 2026-07-06) are a separate
+ * pair of fields from groupid/enrolid above: those auto-grant a ticket on
+ * joining/enrolling, these instead gate whether a user may purchase/claim this
+ * ticket type at all -- see classes/local/eligibility.php.
+ *
  * @package    mod_confcheckin
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -109,6 +114,29 @@ class tickettype_form extends \moodleform {
         $mform->setType('enrolid', PARAM_INT);
         $mform->setDefault('enrolid', 0);
 
+        $mform->addElement('header', 'eligibilityheader', get_string('eligibilityheader', 'confcheckin'));
+        $mform->addHelpButton('eligibilityheader', 'eligibilityheader', 'confcheckin');
+
+        $mform->addElement(
+            'select',
+            'eligibilitygroupid',
+            get_string('eligibilitygroup', 'confcheckin'),
+            $this->_customdata['groupoptions']
+        );
+        $mform->setType('eligibilitygroupid', PARAM_INT);
+        $mform->setDefault('eligibilitygroupid', 0);
+        $mform->addHelpButton('eligibilitygroupid', 'eligibilitygroup', 'confcheckin');
+
+        $mform->addElement(
+            'select',
+            'eligibilityenrolid',
+            get_string('eligibilityenrol', 'confcheckin'),
+            $this->_customdata['enroloptions']
+        );
+        $mform->setType('eligibilityenrolid', PARAM_INT);
+        $mform->setDefault('eligibilityenrolid', 0);
+        $mform->addHelpButton('eligibilityenrolid', 'eligibilityenrol', 'confcheckin');
+
         $this->add_action_buttons(
             false,
             $editing ? get_string('savechanges') : get_string('addtickettype', 'confcheckin')
@@ -153,6 +181,10 @@ class tickettype_form extends \moodleform {
             $errors['enrolid'] = get_string('error:autograntexclusive', 'confcheckin');
         }
 
+        if (!empty($data['eligibilitygroupid']) && !empty($data['eligibilityenrolid'])) {
+            $errors['eligibilityenrolid'] = get_string('error:eligibilityexclusive', 'confcheckin');
+        }
+
         // The select elements are themselves scoped to this course (see lib.php's
         // confcheckin_group_options()/confcheckin_enrol_options()), but a raw POST is
         // not bound by what the select rendered -- re-check the submitted id is one of
@@ -169,6 +201,18 @@ class tickettype_form extends \moodleform {
                 && !array_key_exists((int) $data['enrolid'], $this->_customdata['enroloptions'])
         ) {
             $errors['enrolid'] = get_string('error:invalidautogrant', 'confcheckin');
+        }
+        if (
+            !empty($data['eligibilitygroupid'])
+                && !array_key_exists((int) $data['eligibilitygroupid'], $this->_customdata['groupoptions'])
+        ) {
+            $errors['eligibilitygroupid'] = get_string('error:invalidautogrant', 'confcheckin');
+        }
+        if (
+            !empty($data['eligibilityenrolid'])
+                && !array_key_exists((int) $data['eligibilityenrolid'], $this->_customdata['enroloptions'])
+        ) {
+            $errors['eligibilityenrolid'] = get_string('error:invalidautogrant', 'confcheckin');
         }
 
         return $errors;

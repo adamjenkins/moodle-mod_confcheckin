@@ -17,6 +17,8 @@
 namespace mod_confcheckin\local;
 
 /**
+ * Ticket-type purchase/claim eligibility.
+ *
  * Presenter-ticket eligibility: is a given user a speaker on at least one
  * accepted submission in the mod_confprogram instance linked to a confcheckin
  * instance (confcheckin.confprogramcmid)?
@@ -32,6 +34,13 @@ namespace mod_confcheckin\local;
  * a nullable, unvalidated-at-read-time soft link (the course module or its
  * target instance could have been deleted after linking), so every step
  * degrades to "not eligible" rather than fataling on a stale link.
+ *
+ * Group/enrolment-method eligibility (user request, 2026-07-06): a ticket type
+ * can separately require membership of a specific course group, or enrolment via
+ * a specific enrolment method instance, before it can be purchased/claimed --
+ * see meets_group_or_enrol_requirement() and is_eligible_for_tickettype() below.
+ * This is entirely distinct from confcheckin_tickettype.groupid/enrolid, which
+ * auto-grant a free ticket on joining rather than gate this self-service flow.
  *
  * @package    mod_confcheckin
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
@@ -108,6 +117,60 @@ class eligibility {
         }
 
         return $result;
+    }
+
+    /**
+     * Whether a user meets a ticket type's group/enrolment-method eligibility
+     * requirement (user request, 2026-07-06) -- distinct from
+     * confcheckin_tickettype.groupid/enrolid, which auto-grant a ticket rather than
+     * gate the self-service purchase.php flow. eligibilitygroupid/eligibilityenrolid
+     * are enforced mutually exclusive by classes/form/tickettype_form.php's
+     * validation, so at most one branch below is ever actually consulted; if neither
+     * is set, every user meets the (non-)requirement.
+     *
+     * @param int $userid The user id to check
+     * @param \stdClass $tickettype A confcheckin_tickettype record
+     * @return bool
+     */
+    public static function meets_group_or_enrol_requirement(int $userid, \stdClass $tickettype): bool {
+        if (!empty($tickettype->eligibilitygroupid)) {
+            return groups_is_member((int) $tickettype->eligibilitygroupid, $userid);
+        }
+
+        if (!empty($tickettype->eligibilityenrolid)) {
+            global $DB;
+
+            // Matches find_orphaned_tickets()'s/sync_enrol_grants()'s own existing
+            // "just check a user_enrolments row exists for this enrolid" convention --
+            // no additional ENROL_USER_ACTIVE/enrol-instance-status filtering, for
+            // consistency with how this plugin already treats enrolment elsewhere.
+            return $DB->record_exists('user_enrolments', [
+                'enrolid' => (int) $tickettype->eligibilityenrolid,
+                'userid'  => $userid,
+            ]);
+        }
+
+        return true;
+    }
+
+    /**
+     * Whether a user is eligible to purchase/claim a specific ticket type at all: the
+     * single combined gate consumed by purchase.php and ticket_service.php, covering
+     * BOTH presenteronly (is_presenter()) and the group/enrolment-method requirement
+     * (meets_group_or_enrol_requirement()) above -- a ticket type configured with
+     * both must have both satisfied (AND, not OR).
+     *
+     * @param int $userid The user id to check
+     * @param \stdClass $tickettype A confcheckin_tickettype record
+     * @param int|null $confprogramcmid The confcheckin instance's confprogramcmid setting (nullable)
+     * @return bool
+     */
+    public static function is_eligible_for_tickettype(int $userid, \stdClass $tickettype, ?int $confprogramcmid): bool {
+        if (!empty($tickettype->presenteronly) && !self::is_presenter($userid, $confprogramcmid)) {
+            return false;
+        }
+
+        return self::meets_group_or_enrol_requirement($userid, $tickettype);
     }
 
     /**
