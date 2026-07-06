@@ -150,6 +150,7 @@ $string['purchaseticket'] = 'Buy or claim a ticket';
 $string['receipt'] = 'Receipt';
 $string['redeem'] = 'Redeem';
 $string['redeempromocode'] = 'Have a promo code?';
+$string['removetickets'] = 'Delete all issued tickets and check-ins';
 $string['revoke'] = 'Revoke';
 $string['scaffoldnotice'] = 'Ticket purchase is not yet available: no capability lets you view any part of this activity yet.';
 $string['scancheckin'] = 'Scan check-in';

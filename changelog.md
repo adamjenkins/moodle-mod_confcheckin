@@ -2,6 +2,29 @@
 
 ## [0.1.0] - Unreleased
 
+- User request (2026-07-06): "Also make sure backup/restore/reset all works fine
+  with all plugins." `FEATURE_BACKUP_MOODLE2` flipped to true; new
+  `backup/moodle2/*.php` step classes cover every table (ticket types, promo
+  codes, and templates as instance configuration -- included regardless of the
+  "include user info" setting; tickets and check-ins as user data). Two
+  deliberate correctness decisions, not simple carry-over: a restored ticket's
+  `qrtoken` is always regenerated (it carries a sitewide UNIQUE constraint, and
+  reusing the same secret would let an original printed badge check in against
+  the restored copy too); each ticket type's `soldcount`/promo code's
+  `timesused` are recomputed from the actually-restored rows, not carried over
+  verbatim (which would be wrong whenever "include user info" was off).
+  `confprogramcmid` and `tickettype.groupid`/`enrolid`/`eligibilitygroupid`/
+  `eligibilityenrolid` are resolved in `after_restore()`, since restore order
+  across activities in the same course backup is not guaranteed until every
+  activity's main structure step has completed. New
+  `confcheckin_reset_userdata()`/`_reset_course_form_definition()`/
+  `_defaults()`: course reset deletes all tickets and check-ins and resets
+  those same two running counts back to 0; ticket types, promo codes, and
+  templates survive a reset unchanged. Verified with a real
+  `backup_controller`/`restore_controller` cycle (`tests/backup/
+  restore_confcheckin_test.php`), not just a unit test of the stepslib classes.
+  96/96 PHPUnit passing (was 94, +2 new), phpcs/moodlecheck clean, EN/JA lang
+  parity verified (163/163 keys).
 - User request (2026-07-05/06): "In confcheckin, add the ability to require a
   group/enrolment method as an eligibility requirement for a ticket."
   `confcheckin_tickettype` gains `eligibilitygroupid`/`eligibilityenrolid`

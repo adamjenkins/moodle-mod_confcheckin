@@ -38,7 +38,7 @@ function confcheckin_supports($feature) {
     return match ($feature) {
         FEATURE_MOD_INTRO        => true,
         FEATURE_SHOW_DESCRIPTION => true,
-        FEATURE_BACKUP_MOODLE2   => false, // Not yet implemented; set true once backup/restore steps exist.
+        FEATURE_BACKUP_MOODLE2   => true,
         FEATURE_GRADE_HAS_GRADE  => false,
         FEATURE_MOD_PURPOSE      => MOD_PURPOSE_OTHER,
         default                  => null,
@@ -257,4 +257,105 @@ function confcheckin_enrol_options(int $courseid): array {
     }
 
     return $options;
+}
+
+/**
+ * Adds the confcheckin-specific elements to the course reset form.
+ *
+ * @param MoodleQuickForm $mform The course reset form
+ * @return void
+ */
+function confcheckin_reset_course_form_definition(&$mform) {
+    $mform->addElement('header', 'confcheckinheader', get_string('modulenameplural', 'confcheckin'));
+    $mform->addElement('advcheckbox', 'reset_confcheckin_tickets', get_string('removetickets', 'confcheckin'));
+}
+
+/**
+ * Course reset form defaults.
+ *
+ * @param stdClass $course The course object
+ * @return array
+ */
+function confcheckin_reset_course_form_defaults($course) {
+    return ['reset_confcheckin_tickets' => 1];
+}
+
+/**
+ * Removes every issued ticket (and its check-in, if any) for every confcheckin
+ * instance in a course, when a teacher resets the course for reuse, and resets each
+ * ticket type's soldcount and each promo code's timesused back to 0 -- both are running
+ * counts of the now-deleted tickets, and would otherwise overstate usage (a ticket type
+ * showing "sold out" with zero actual tickets in the reused course) or block a promo
+ * code from ever being redeemed again (a maxuses cap already reached by tickets that no
+ * longer exist). Ticket types, promo codes, and templates are instance CONFIGURATION and
+ * are deliberately left otherwise untouched, matching every sibling plugin's own
+ * "config survives a reset, user data doesn't" convention.
+ *
+ * @param stdClass $data The data submitted from the reset course form
+ * @return array status array
+ */
+function confcheckin_reset_userdata($data) {
+    global $DB;
+
+    $componentstr = get_string('modulenameplural', 'confcheckin');
+    $status = [];
+
+    if (!empty($data->reset_confcheckin_tickets)) {
+        $confcheckinids = $DB->get_fieldset_select('confcheckin', 'id', 'course = ?', [$data->courseid]);
+
+        if ($confcheckinids) {
+            [$insql, $params] = $DB->get_in_or_equal($confcheckinids);
+            $ticketids = $DB->get_fieldset_select('confcheckin_ticket', 'id', "confcheckin $insql", $params);
+
+            if ($ticketids) {
+                [$ticketinsql, $ticketparams] = $DB->get_in_or_equal($ticketids);
+                $DB->delete_records_select('confcheckin_checkin', "ticketid $ticketinsql", $ticketparams);
+            }
+
+            $DB->delete_records_select('confcheckin_ticket', "confcheckin $insql", $params);
+            $DB->set_field_select('confcheckin_tickettype', 'soldcount', 0, "confcheckin $insql", $params);
+            $DB->set_field_select('confcheckin_promocode', 'timesused', 0, "confcheckin $insql", $params);
+        }
+
+        $status[] = [
+            'component' => $componentstr,
+            'item' => get_string('removetickets', 'confcheckin'),
+            'error' => false,
+        ];
+    }
+
+    if (!empty($data->timeshift)) {
+        // Any changes to the list of dates that needs to be rolled should be the same
+        // during course restore and course reset (see MDL-9367). Not implemented via
+        // shift_course_mod_dates() -- that helper shifts columns on the {$modname} table
+        // itself, but validfrom/validto/timeexpires live on this plugin's own
+        // confcheckin_tickettype/confcheckin_promocode tables instead, scoped through
+        // confcheckin's own instance ids for this course rather than a courseid column
+        // of their own.
+        $confcheckinids = $DB->get_fieldset_select('confcheckin', 'id', 'course = ?', [$data->courseid]);
+        if ($confcheckinids) {
+            [$insql, $params] = $DB->get_in_or_equal($confcheckinids);
+            foreach (['validfrom', 'validto'] as $field) {
+                $DB->execute(
+                    "UPDATE {confcheckin_tickettype}
+                        SET $field = $field + ?
+                      WHERE confcheckin $insql AND $field IS NOT NULL",
+                    array_merge([$data->timeshift], $params)
+                );
+            }
+            $DB->execute(
+                "UPDATE {confcheckin_promocode}
+                    SET timeexpires = timeexpires + ?
+                  WHERE confcheckin $insql AND timeexpires IS NOT NULL",
+                array_merge([$data->timeshift], $params)
+            );
+        }
+        $status[] = [
+            'component' => $componentstr,
+            'item' => get_string('date'),
+            'error' => false,
+        ];
+    }
+
+    return $status;
 }

@@ -150,6 +150,7 @@ $string['purchaseticket'] = 'チケットを購入・取得する';
 $string['receipt'] = '領収書';
 $string['redeem'] = '利用する';
 $string['redeempromocode'] = 'プロモコードをお持ちですか？';
+$string['removetickets'] = '発行済みチケットとチェックインをすべて削除';
 $string['revoke'] = '取り消す';
 $string['scaffoldnotice'] = 'チケット購入はまだ利用できません。このアクティビティのいずれの部分を閲覧できる権限もまだありません。';
 $string['scancheckin'] = 'チェックインをスキャン';

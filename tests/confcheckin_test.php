@@ -136,7 +136,60 @@ final class confcheckin_test extends advanced_testcase {
         require_once($CFG->dirroot . '/mod/confcheckin/lib.php');
 
         $this->assertTrue(confcheckin_supports(FEATURE_MOD_INTRO));
-        $this->assertFalse(confcheckin_supports(FEATURE_BACKUP_MOODLE2));
+        $this->assertTrue(confcheckin_supports(FEATURE_BACKUP_MOODLE2));
         $this->assertNull(confcheckin_supports('some_unknown_feature'));
+    }
+
+    /**
+     * confcheckin_reset_userdata() deletes every ticket (and its check-in) for
+     * instances in the given course, resets soldcount/timesused back to 0, but leaves
+     * ticket types/promo codes/templates otherwise untouched.
+     */
+    public function test_reset_userdata_removes_tickets_but_keeps_config(): void {
+        $this->resetAfterTest();
+        global $CFG, $DB;
+        require_once($CFG->dirroot . '/mod/confcheckin/lib.php');
+
+        $course = $this->getDataGenerator()->create_course();
+        $confcheckin = $this->getDataGenerator()->create_module('confcheckin', ['course' => $course->id]);
+
+        $now = time();
+        $tickettypeid = (int) $DB->insert_record('confcheckin_tickettype', (object) [
+            'confcheckin'  => $confcheckin->id,
+            'name'         => 'Standard',
+            'price'        => '0.00',
+            'currency'     => 'USD',
+            'sortorder'    => 0,
+            'visible'      => 1,
+            'soldcount'    => 0,
+            'timecreated'  => $now,
+            'timemodified' => $now,
+        ]);
+        $promocodeid = (int) $DB->insert_record('confcheckin_promocode', (object) [
+            'confcheckin'  => $confcheckin->id,
+            'code'         => 'FREEBIE',
+            'tickettypeid' => $tickettypeid,
+            'timesused'    => 1,
+            'timecreated'  => $now,
+        ]);
+
+        $attendee = $this->getDataGenerator()->create_user();
+        $ticket = \mod_confcheckin\local\ticket_service::redeem_promocode(
+            (int) $confcheckin->id,
+            'FREEBIE',
+            (int) $attendee->id
+        );
+
+        $status = confcheckin_reset_userdata((object) [
+            'courseid' => $course->id,
+            'reset_confcheckin_tickets' => 1,
+            'timeshift' => 0,
+        ]);
+
+        $this->assertNotEmpty($status);
+        $this->assertFalse($DB->record_exists('confcheckin_ticket', ['id' => $ticket->id]));
+        $this->assertTrue($DB->record_exists('confcheckin_tickettype', ['id' => $tickettypeid]));
+        $this->assertSame(0, (int) $DB->get_field('confcheckin_tickettype', 'soldcount', ['id' => $tickettypeid]));
+        $this->assertSame(0, (int) $DB->get_field('confcheckin_promocode', 'timesused', ['id' => $promocodeid]));
     }
 }
