@@ -21,10 +21,11 @@ jobs:
             ]}' | tr -d '\n' >> "$GITHUB_OUTPUT"
           else
             # Full matrix on push: every supported PHP version against every supported Moodle branch and DB.
-            # Per each branch's own version block in (public/)admin/environment.xml, the minimum PHP is
-            # 8.2.0 for 500/501 and 8.3.0 for 502 — matches composer.json's stated floor for each branch.
-            # PHP 8.2 is excluded only for 502. Re-verify against environment.xml before changing this.
-            echo 'matrix={"php":["8.2","8.3","8.4"],"moodle-branch":["MOODLE_500_STABLE","MOODLE_501_STABLE","MOODLE_502_STABLE"],"database":["pgsql","mariadb"],"exclude":[{"php":"8.2","moodle-branch":"MOODLE_502_STABLE"}]}' >> "$GITHUB_OUTPUT"
+            # This plugin's version.php pins $plugin->requires to 2026042000 (Moodle 5.2), so only
+            # MOODLE_502_STABLE is installable — 500/501 always fail with pluginrequirementsnotmet.
+            # Per 502's own version block in (public/)admin/environment.xml, the minimum PHP is 8.3.0.
+            # Re-verify against environment.xml and version.php's $plugin->requires before widening this.
+            echo 'matrix={"php":["8.3","8.4"],"moodle-branch":["MOODLE_502_STABLE"],"database":["pgsql","mariadb"]}' >> "$GITHUB_OUTPUT"
           fi
 
   test:
@@ -33,10 +34,9 @@ jobs:
 
     services:
       postgres:
-        # Per each branch's own version block in (public/)admin/environment.xml, the minimum
-        # PostgreSQL is 14 (500), 15 (501), 16 (502). One image is shared across the whole
-        # matrix, so it must satisfy the strictest of the three (502's 16). Re-verify against
-        # environment.xml before bumping this down.
+        # Only MOODLE_502_STABLE is tested (see matrix-setup above); its own version block in
+        # (public/)admin/environment.xml requires PostgreSQL 16. Re-verify against environment.xml
+        # before bumping this down.
         image: postgres:16
         env:
           POSTGRES_USER: postgres
