@@ -103,6 +103,17 @@ jobs:
           sudo locale-gen en_AU.UTF-8
           echo "NVM_DIR=$HOME/.nvm" >> $GITHUB_ENV
 
+      - name: Add sibling plugin dependencies
+        # This plugin's own hard runtime dependency is only mod_confprogram
+        # (see README.md), but tests/backup/restore_full_chain_test.php builds
+        # a full course with all four suite activities to test cross-plugin
+        # backup/restore, so mod_confsubmissions and mod_confscheduler must
+        # also be present in the test site.
+        run: |
+          moodle-plugin-ci add-plugin adamjenkins/moodle-mod_confsubmissions
+          moodle-plugin-ci add-plugin adamjenkins/moodle-mod_confprogram
+          moodle-plugin-ci add-plugin adamjenkins/moodle-mod_confscheduler
+
       - name: Install Moodle
         run: moodle-plugin-ci install --plugin ./plugin --db-host=127.0.0.1
         env:
