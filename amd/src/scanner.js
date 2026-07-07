@@ -128,11 +128,29 @@ const startCameraScanning = async(state) => {
     state.videoEl.hidden = false;
     await state.videoEl.play();
 
+    let detector;
+    try {
+        detector = new window.BarcodeDetector({formats: ['qr_code']});
+    } catch (exception) {
+        // Defence in depth: init() below already checks getSupportedFormats() before
+        // ever showing the camera toggle, specifically because a browser can expose
+        // `BarcodeDetector` (so the 'BarcodeDetector' in window check alone passes)
+        // while not actually supporting the 'qr_code' format -- observed live as an
+        // intermittent Android bug report ("camera activated, but no QR code was
+        // read"): this constructor throws synchronously in that case, and since it
+        // used to run AFTER the camera stream was already live with no try/catch
+        // around it, the whole detect loop silently never started, leaving a dead
+        // camera preview with no error shown. Caught here too in case support changes
+        // between that earlier check and this call, or getSupportedFormats() itself
+        // is unreliable on some implementation.
+        stopCameraScanning(state);
+        Notification.alert(state.strings.scanwithcamera, state.strings.cameraerror);
+        return;
+    }
+
     state.cameraActive = true;
     state.lastDetected = null;
     state.lastDetectedTime = 0;
-
-    const detector = new window.BarcodeDetector({formats: ['qr_code']});
 
     const detectLoop = async() => {
         if (!state.cameraActive) {
@@ -223,7 +241,31 @@ export const init = async(cmid) => {
     // Progressive enhancement only: most browsers/web views (notably Safari/
     // WebKit as of this writing) do not implement BarcodeDetector at all, and the
     // page is already fully usable without it via the text field above.
+    //
+    // 'BarcodeDetector' in window alone is not enough (bug report, 2026-07-07:
+    // "QR scanner when tried on Android didn't recognise/process QR codes. Camera
+    // activated, but no QR code was read"): some Android browsers expose the
+    // BarcodeDetector constructor without actually supporting the 'qr_code' format
+    // (the on-device barcode-scanning module some vendors ship it against can be
+    // missing/unsupported), in which case `new BarcodeDetector({formats:
+    // ['qr_code']})` throws synchronously -- see startCameraScanning()'s own
+    // try/catch for the second layer of defence against that. Checking
+    // getSupportedFormats() up front means the button is never shown at all on a
+    // device where it would only fail after already turning the camera on, matching
+    // this feature's own progressive-enhancement philosophy: degrade to the
+    // always-usable text field rather than show a control that looks like it works
+    // but silently doesn't.
+    let qrcodeSupported = false;
     if ('BarcodeDetector' in window) {
+        try {
+            const formats = await window.BarcodeDetector.getSupportedFormats();
+            qrcodeSupported = formats.includes('qr_code');
+        } catch (exception) {
+            qrcodeSupported = false;
+        }
+    }
+
+    if (qrcodeSupported) {
         state.cameraToggleEl.hidden = false;
         state.cameraToggleEl.addEventListener('click', () => {
             if (state.cameraActive) {
