@@ -657,4 +657,65 @@ final class ticket_service_test extends advanced_testcase {
 
         $this->assertSame([], ticket_service::find_orphaned_tickets((int) $confcheckin->id));
     }
+
+    /**
+     * addtogroupid (user request, 2026-07-07) adds the ticket holder to the chosen
+     * course group -- the opposite direction from groupid's auto-grant. Exercised via
+     * issue_free_ticket(); insert_ticket() is the single choke point every issuance
+     * path (free/purchase/promo/grant) shares, so this covers all of them.
+     */
+    public function test_issue_free_ticket_adds_to_group(): void {
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $confcheckin = $this->getDataGenerator()->create_module('confcheckin', ['course' => $course->id]);
+        $group = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
+        $tickettypeid = $this->create_tickettype((int) $confcheckin->id, ['addtogroupid' => $group->id]);
+
+        // groups_add_member() itself (Moodle core, group/lib.php) silently no-ops for a
+        // user not enrolled in the group's course -- a real precondition, not something
+        // this feature can or should override, so the fixture enrols the user first,
+        // the same as any real ticket buyer would already need to be to even reach
+        // purchase.php (mod/confcheckin:purchase is a course-context capability).
+        $user = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($user->id, $course->id);
+        $this->assertFalse(groups_is_member($group->id, $user->id));
+
+        ticket_service::issue_free_ticket((int) $confcheckin->id, $tickettypeid, (int) $user->id);
+
+        $this->assertTrue(groups_is_member($group->id, $user->id));
+    }
+
+    /**
+     * A ticket type with no addtogroupid set never touches group membership.
+     */
+    public function test_issue_free_ticket_without_addtogroupid_does_not_add_to_any_group(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid);
+
+        $user = $this->getDataGenerator()->create_user();
+        ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+
+        $this->assertFalse($DB->record_exists('groups_members', ['userid' => $user->id]));
+    }
+
+    /**
+     * A stale addtogroupid (the group was deleted after the ticket type was
+     * configured) must never block ticket issuance itself -- same "best-effort side
+     * effect" posture as this project's notification-send code.
+     */
+    public function test_issue_free_ticket_survives_deleted_addtogroup(): void {
+        $this->resetAfterTest();
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid, ['addtogroupid' => 999999]);
+        $user = $this->getDataGenerator()->create_user();
+
+        $ticket = ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+
+        $this->assertSame('free', $ticket->origin);
+    }
 }

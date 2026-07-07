@@ -119,7 +119,14 @@ class ticket_service {
 
             self::reserve_capacity_locked($tickettype);
 
-            $ticket = self::insert_ticket($confcheckinid, $tickettype->id, $userid, 'free', null);
+            $ticket = self::insert_ticket(
+                $confcheckinid,
+                $tickettype->id,
+                $userid,
+                'free',
+                null,
+                $tickettype->addtogroupid !== null ? (int) $tickettype->addtogroupid : null
+            );
 
             $transaction->allow_commit();
 
@@ -170,7 +177,14 @@ class ticket_service {
 
             $DB->set_field('confcheckin_promocode', 'timesused', (int) $promocode->timesused + 1, ['id' => $promocode->id]);
 
-            $ticket = self::insert_ticket($confcheckinid, $tickettype->id, $userid, 'promo', (int) $promocode->id);
+            $ticket = self::insert_ticket(
+                $confcheckinid,
+                $tickettype->id,
+                $userid,
+                'promo',
+                (int) $promocode->id,
+                $tickettype->addtogroupid !== null ? (int) $tickettype->addtogroupid : null
+            );
 
             $transaction->allow_commit();
 
@@ -210,7 +224,14 @@ class ticket_service {
 
             self::reserve_capacity_locked($tickettype);
 
-            $ticket = self::insert_ticket($confcheckinid, $tickettype->id, $userid, 'purchase', null);
+            $ticket = self::insert_ticket(
+                $confcheckinid,
+                $tickettype->id,
+                $userid,
+                'purchase',
+                null,
+                $tickettype->addtogroupid !== null ? (int) $tickettype->addtogroupid : null
+            );
 
             $transaction->allow_commit();
 
@@ -268,7 +289,14 @@ class ticket_service {
 
             self::reserve_capacity_locked($tickettype);
 
-            $ticket = self::insert_ticket($confcheckinid, $tickettype->id, $userid, 'grant', null);
+            $ticket = self::insert_ticket(
+                $confcheckinid,
+                $tickettype->id,
+                $userid,
+                'grant',
+                null,
+                $tickettype->addtogroupid !== null ? (int) $tickettype->addtogroupid : null
+            );
 
             $transaction->allow_commit();
 
@@ -556,6 +584,9 @@ class ticket_service {
      * @param int $userid The user id the ticket is issued to
      * @param string $origin One of purchase, free, promo or grant
      * @param int|null $promocodeid The confcheckin_promocode id, when $origin is promo; else null
+     * @param int|null $addtogroupid The ticket type's addtogroupid (user request, 2026-07-07),
+     *        or null for no auto-add. Every caller already has the locked ticket type record
+     *        in scope, so this is passed rather than re-fetched here.
      * @return \stdClass The newly-inserted confcheckin_ticket record
      */
     private static function insert_ticket(
@@ -563,7 +594,8 @@ class ticket_service {
         int $tickettypeid,
         int $userid,
         string $origin,
-        ?int $promocodeid
+        ?int $promocodeid,
+        ?int $addtogroupid = null
     ): \stdClass {
         global $DB;
 
@@ -580,6 +612,29 @@ class ticket_service {
         ];
 
         $record->id = $DB->insert_record('confcheckin_ticket', $record);
+
+        if ($addtogroupid) {
+            // Best-effort: a stale group id (deleted after the ticket type was
+            // configured) must never break the ticket issuance a buyer is actively
+            // waiting on -- same "side effect failure must not break the primary
+            // action" posture as notifier.php's message_send() try/catch elsewhere in
+            // this project. groups_add_member() is itself idempotent (a no-op if
+            // already a member), so this is also safe to call on every issuance
+            // without an existing-membership check first.
+            //
+            // Note: groups_add_member() (Moodle core) itself silently no-ops -- no
+            // exception, just a false return this method does not check -- for a user
+            // not enrolled in the group's course. That is expected here, not a bug in
+            // this feature: a real ticket buyer must already hold
+            // mod/confcheckin:purchase in this course context to have reached the
+            // purchase flow at all, so is virtually always already enrolled.
+            try {
+                groups_add_member($addtogroupid, $userid);
+            } catch (\Throwable $e) {
+                // phpcs:ignore moodle.PHP.ForbiddenFunctions.FoundWithAlternative
+                error_log('mod_confcheckin addtogroupid group-add failed: ' . $e->getMessage());
+            }
+        }
 
         return $record;
     }

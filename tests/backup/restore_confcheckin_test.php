@@ -127,4 +127,45 @@ final class restore_confcheckin_test extends \restore_date_testcase {
         $newtemplate = $DB->get_record('confcheckin_template', ['confcheckin' => $newconfcheckin->id], '*', MUST_EXIST);
         $this->assertSame('<p>[[fullname]]</p>', $newtemplate->content);
     }
+
+    /**
+     * addtogroupid (user request, 2026-07-07) is a course-level group reference, same
+     * remapping class as groupid/eligibilitygroupid -- must be resolved to the
+     * RESTORED copy of the group in after_restore(), never left pointing at the
+     * original course's group id.
+     */
+    public function test_addtogroupid_is_remapped(): void {
+        global $DB;
+
+        [$course, $confcheckin] = $this->create_course_and_module('confcheckin');
+        $group = $this->getDataGenerator()->create_group(['courseid' => $course->id, 'name' => 'Volunteers']);
+
+        $now = time();
+        $DB->insert_record('confcheckin_tickettype', (object) [
+            'confcheckin'   => $confcheckin->id,
+            'name'          => 'Standard',
+            'price'         => '0.00',
+            'currency'      => 'USD',
+            'sortorder'     => 0,
+            'visible'       => 1,
+            'soldcount'     => 0,
+            'addtogroupid'  => $group->id,
+            'timecreated'   => $now,
+            'timemodified'  => $now,
+        ]);
+
+        $newcourseid = $this->backup_and_restore($course);
+
+        $newconfcheckin = $DB->get_record('confcheckin', ['course' => $newcourseid], '*', MUST_EXIST);
+        $newtickettype = $DB->get_record(
+            'confcheckin_tickettype',
+            ['confcheckin' => $newconfcheckin->id],
+            '*',
+            MUST_EXIST
+        );
+        $newgroup = $DB->get_record('groups', ['courseid' => $newcourseid, 'name' => 'Volunteers'], '*', MUST_EXIST);
+
+        $this->assertSame((int) $newgroup->id, (int) $newtickettype->addtogroupid);
+        $this->assertNotSame((int) $group->id, (int) $newtickettype->addtogroupid);
+    }
 }

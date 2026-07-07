@@ -29,6 +29,11 @@ require_once($CFG->dirroot . '/mod/confcheckin/lib.php');
  * joining/enrolling, these instead gate whether a user may purchase/claim this
  * ticket type at all -- see classes/local/eligibility.php.
  *
+ * addtogroupid (user request, 2026-07-07) is yet another, independent direction:
+ * a user issued a ticket of this type is added TO this group, the reverse of
+ * groupid's "group membership grants a ticket" -- see
+ * classes/local/ticket_service.php::insert_ticket().
+ *
  * @package    mod_confcheckin
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -137,6 +142,19 @@ class tickettype_form extends \moodleform {
         $mform->setDefault('eligibilityenrolid', 0);
         $mform->addHelpButton('eligibilityenrolid', 'eligibilityenrol', 'confcheckin');
 
+        $mform->addElement('header', 'addtogroupheader', get_string('addtogroupheader', 'confcheckin'));
+        $mform->addHelpButton('addtogroupheader', 'addtogroupheader', 'confcheckin');
+
+        $mform->addElement(
+            'select',
+            'addtogroupid',
+            get_string('addtogroup', 'confcheckin'),
+            $this->_customdata['groupoptions']
+        );
+        $mform->setType('addtogroupid', PARAM_INT);
+        $mform->setDefault('addtogroupid', 0);
+        $mform->addHelpButton('addtogroupid', 'addtogroup', 'confcheckin');
+
         $this->add_action_buttons(
             false,
             $editing ? get_string('savechanges') : get_string('addtickettype', 'confcheckin')
@@ -213,6 +231,12 @@ class tickettype_form extends \moodleform {
                 && !array_key_exists((int) $data['eligibilityenrolid'], $this->_customdata['enroloptions'])
         ) {
             $errors['eligibilityenrolid'] = get_string('error:invalidautogrant', 'confcheckin');
+        }
+        if (
+            !empty($data['addtogroupid'])
+                && !array_key_exists((int) $data['addtogroupid'], $this->_customdata['groupoptions'])
+        ) {
+            $errors['addtogroupid'] = get_string('error:invalidautogrant', 'confcheckin');
         }
 
         return $errors;

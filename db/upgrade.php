@@ -119,5 +119,20 @@ function xmldb_confcheckin_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026070601, 'confcheckin');
     }
 
+    if ($oldversion < 2026070701) {
+        // "Add to group" (user request, 2026-07-07): the OPPOSITE direction from
+        // groupid above -- a user issued a ticket of this type is automatically added
+        // to this group, instead of group membership auto-granting a ticket. See
+        // db/install.xml's field comment.
+        $table = new xmldb_table('confcheckin_tickettype');
+
+        $field = new xmldb_field('addtogroupid', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'eligibilityenrolid');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026070701, 'confcheckin');
+    }
+
     return true;
 }

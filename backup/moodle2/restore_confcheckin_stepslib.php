@@ -30,7 +30,7 @@
  * own main structure processing, since restore does not guarantee that sibling has
  * already been restored by the time this step's process_confcheckin() runs (activities
  * are restored in whatever order the backup file lists them, not in dependency order).
- * groupid/enrolid/eligibilitygroupid/eligibilityenrolid on a ticket type reference
+ * groupid/enrolid/eligibilitygroupid/eligibilityenrolid/addtogroupid on a ticket type reference
  * course-level groups/enrolment methods (core's own 'group'/'enrol' restore mappings,
  * set by course-level restore steps that in practice run before any activity's own
  * structure step, but treated here with the same after_restore()-deferred caution as
@@ -236,11 +236,11 @@ class restore_confcheckin_activity_structure_step extends restore_activity_struc
 
         $tickettypes = $DB->get_records('confcheckin_tickettype', ['confcheckin' => $confcheckinid]);
         foreach ($tickettypes as $tickettype) {
-            foreach (['groupid', 'enrolid', 'eligibilitygroupid', 'eligibilityenrolid'] as $field) {
+            foreach (['groupid', 'enrolid', 'eligibilitygroupid', 'eligibilityenrolid', 'addtogroupid'] as $field) {
                 if (empty($tickettype->$field)) {
                     continue;
                 }
-                $mappingname = in_array($field, ['groupid', 'eligibilitygroupid'], true) ? 'group' : 'enrol';
+                $mappingname = in_array($field, ['groupid', 'eligibilitygroupid', 'addtogroupid'], true) ? 'group' : 'enrol';
                 $newid = $this->get_mappingid($mappingname, $tickettype->$field);
                 $DB->set_field('confcheckin_tickettype', $field, $newid ?: null, ['id' => $tickettype->id]);
             }

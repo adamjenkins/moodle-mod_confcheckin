@@ -108,6 +108,7 @@ if ($edittickettype) {
         'enrolid'             => $edittickettype->enrolid ?? 0,
         'eligibilitygroupid'  => $edittickettype->eligibilitygroupid ?? 0,
         'eligibilityenrolid'  => $edittickettype->eligibilityenrolid ?? 0,
+        'addtogroupid'        => $edittickettype->addtogroupid ?? 0,
     ]);
 }
 
@@ -123,12 +124,13 @@ if ($tickettypeform->is_cancelled()) {
     $enrolid = !empty($formdata->enrolid) ? (int) $formdata->enrolid : null;
     $eligibilitygroupid = !empty($formdata->eligibilitygroupid) ? (int) $formdata->eligibilitygroupid : null;
     $eligibilityenrolid = !empty($formdata->eligibilityenrolid) ? (int) $formdata->eligibilityenrolid : null;
+    $addtogroupid = !empty($formdata->addtogroupid) ? (int) $formdata->addtogroupid : null;
 
-    // Re-verify server-side that groupid/enrolid/eligibilitygroupid/eligibilityenrolid
-    // belong to this course, even though tickettype_form::validation() already checked
-    // them against the rendered select options -- the same "never trust a
-    // stored/submitted id transitively without re-verifying" rule this file already
-    // applies to tickettypeid above.
+    // Re-verify server-side that groupid/enrolid/eligibilitygroupid/eligibilityenrolid/
+    // addtogroupid belong to this course, even though tickettype_form::validation()
+    // already checked them against the rendered select options -- the same "never
+    // trust a stored/submitted id transitively without re-verifying" rule this file
+    // already applies to tickettypeid above.
     if ($groupid !== null && !$DB->record_exists('groups', ['id' => $groupid, 'courseid' => $course->id])) {
         throw new \moodle_exception('error:invalidautogrant', 'confcheckin');
     }
@@ -147,6 +149,9 @@ if ($tickettypeform->is_cancelled()) {
     ) {
         throw new \moodle_exception('error:invalidautogrant', 'confcheckin');
     }
+    if ($addtogroupid !== null && !$DB->record_exists('groups', ['id' => $addtogroupid, 'courseid' => $course->id])) {
+        throw new \moodle_exception('error:invalidautogrant', 'confcheckin');
+    }
 
     $record = (object) [
         'confcheckin'         => $confcheckin->id,
@@ -163,6 +168,7 @@ if ($tickettypeform->is_cancelled()) {
         'enrolid'             => $enrolid,
         'eligibilitygroupid'  => $eligibilitygroupid,
         'eligibilityenrolid'  => $eligibilityenrolid,
+        'addtogroupid'        => $addtogroupid,
         'timemodified'        => time(),
     ];
 
@@ -223,6 +229,7 @@ if ($tickettypes) {
         get_string('visible', 'confcheckin'),
         get_string('autogrant', 'confcheckin'),
         get_string('eligibilityheader', 'confcheckin'),
+        get_string('addtogroupheader', 'confcheckin'),
         '',
     ];
     $table->attributes['class'] = 'generaltable';
@@ -262,6 +269,14 @@ if ($tickettypes) {
             $eligibilitylabel = get_string('eligibilityenrolvalue', 'confcheckin', $enrolname ?? '?');
         }
 
+        $addtogrouplabel = '-';
+        if (!empty($tickettype->addtogroupid)) {
+            $groupname = $groupnames[$tickettype->addtogroupid]->name ?? null;
+            $addtogrouplabel = $groupname !== null
+                ? format_string($groupname)
+                : get_string('error:invalidtickettype', 'confcheckin');
+        }
+
         $editurl = new moodle_url($pageurl, ['edit' => $tickettype->id]);
         $editlink = $OUTPUT->action_icon(
             $editurl,
@@ -286,6 +301,7 @@ if ($tickettypes) {
             $tickettype->visible ? get_string('yes') : get_string('no'),
             $autograntlabel,
             $eligibilitylabel,
+            $addtogrouplabel,
             $editlink . ' ' . $deletelink,
         ];
     }

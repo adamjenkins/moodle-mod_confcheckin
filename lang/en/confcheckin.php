@@ -23,6 +23,10 @@
  */
 $string['addpromocode'] = 'Add promo code';
 $string['addtickettype'] = 'Add ticket type';
+$string['addtogroup'] = 'Add ticket holders to group';
+$string['addtogroup_help'] = 'Every user issued a ticket of this type is added to the chosen course group.';
+$string['addtogroupheader'] = 'Add to group';
+$string['addtogroupheader_help'] = 'Automatically add a user to a course group the moment they are issued a ticket of this type (purchase, free, promo redemption, or auto-grant) -- the opposite direction from "Auto-grant" above, which grants a ticket FROM group membership. If they already belong to the group, nothing changes. Leaving a group afterwards does not revoke the ticket, and losing the ticket does not remove them from the group.';
 $string['alreadycheckedin'] = 'Already checked in';
 $string['autogrant'] = 'Auto-grant';
 $string['autogrant_help'] = 'Automatically issue a free ticket of this type to a user the moment they join a specific course group, or are enrolled via a specific enrolment method -- useful for e.g. comping a ticket to a "Volunteers" group or a specific self-enrolment key. Choose at most one of the two below. Saving this also immediately grants a ticket to every CURRENT member/enrolled user, not just future ones. If someone later leaves the group or is unenrolled, their ticket is left alone -- see "Orphaned tickets" for a report of tickets whose granting condition no longer holds, with a manual revoke option.';
