@@ -1,0 +1,46 @@
+# mod_confcheckin
+
+**Conference Check-in**（チェックイン）— カンファレンスのチケット発行・販売、QR コード付きバッジの印刷、出席記録、修了証発行を行う Moodle アクティビティモジュール。
+
+*ドキュメント: [English](README.md) · 日本語（このファイル）*
+
+[Conference Tools](https://github.com/adamjenkins/moodle-conference-tools) スイートの一部です:
+
+- [mod_confsubmissions](https://github.com/adamjenkins/moodle-mod_confsubmissions) — 発表募集
+- [mod_confprogram](https://github.com/adamjenkins/moodle-mod_confprogram) — 査読ワークフロー＋公開プログラム
+- [mod_confscheduler](https://github.com/adamjenkins/moodle-mod_confscheduler) — ドラッグ＆ドロップのブロックスケジュール
+- **mod_confcheckin**（本プラグイン）— チケット・バッジ・QR チェックイン
+
+## 機能概要
+
+- **チケット種別** — インスタンスごとに任意の数（例:1日券／3日券、学生、発表者）を、価格・通貨・定員・有効期間とともに定義します。種別は*発表者限定*（Conference Program で確認 — 自分が発表する採択済み応募があること）にしたり、コースグループへの所属や登録方法でゲートしたりできます。
+- **購入と無料チケット** — 有料チケットは Moodle の `core_payment`（インストール済みの任意のゲートウェイ）で購入します。価格ゼロの種別、プロモーションコード、グループ／登録による自動付与では、支払いや領収書なしでチケットが直接発行されます。
+- **自動付与** — チケット種別をコースグループや登録方法にリンクすると、参加／登録時に無料チケットが自動発行され、同期されます。**孤立チケット**レポートは、リンクが該当しなくなった自動付与チケットを一覧表示し、手動で取り消せます。
+- **バッジ・チケット・領収書・修了証** — 主催者が編集するテンプレート（プログラム・コース・ユーザープロフィールから取得したプレースホルダー付き）を PDF に描画し、各バッジには一意の QR コードが付きます。参加者ごと、または一括 ZIP でダウンロードできます。
+- **チェックイン** — Web の QR スキャナー（あらゆる USB／Bluetooth バッジスキャナーで動作するテキスト入力欄と、任意のカメラスキャン）が出席を記録します。Moodle アプリ内でも動作します。出席の記録が行われると修了証が取得可能になります。
+
+## 要件
+
+- Moodle 5.2（`2026042000`）以降。
+- 同じコースに mod_confprogram がインストールされていること（唯一の必須依存で、発表者チケットの資格確認に使用します）。mod_confsubmissions には直接依存しません。
+
+## インストール
+
+```
+git clone https://github.com/adamjenkins/moodle-mod_confcheckin.git mod/confcheckin
+php admin/cli/upgrade.php
+```
+
+## 補足
+
+- チケットの QR トークンは暗号学的にランダムで、サイト全体で一意です。リストアされたチケットには常に新しいトークンが割り当てられ、各チケット種別の販売数は実在するチケットから再計算されます。
+- バッジ／チケットのプレースホルダー区切り文字はサイト全体の管理設定です（既定は `[[ ]]`）。
+- Moodle アプリ表示は `<core-iframe>` サイトプラグインのパターンを使用しており、本環境では実機アプリビルドでの検証は行われていません。
+
+## ライセンス
+
+GNU GPL v3 以降。[LICENSE](LICENSE) を参照してください。
+
+## 作者
+
+Adam Jenkins <adam@wisecat.net>
