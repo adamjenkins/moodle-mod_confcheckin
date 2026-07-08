@@ -27,6 +27,31 @@
  * from the full enrolled-user list is what makes both of those visible in one
  * place, alongside who's already checked in and when.
  *
+ * Two enhancements added the same day, both user-requested:
+ * - Sortable columns: purely client-side (amd/src/report_table.js re-orders
+ *   the already-rendered rows by each cell's data-sort-value on header click),
+ *   not Moodle's table_sql/flexible_table API -- this report's data comes from
+ *   combining get_enrolled_users() with a separate ticket/check-in query in
+ *   PHP, not one flat SQL result set a table_sql subclass could sort/paginate
+ *   at the DB level, and course-enrolment-sized lists don't need server-side
+ *   pagination in the first place.
+ * - A manual check-in/remove-check-in toggle, gated separately on
+ *   mod/confcheckin:scancheckin (the same capability the QR scanner itself
+ *   requires -- viewing the report and recording a check-in are different
+ *   actions, even though today's archetype defaults happen to grant both to
+ *   the same roles). Implemented as a plain GET link + sesskey + redirect,
+ *   the exact pattern orphanedtickets.php's own revoke-ticket action already
+ *   uses, rather than introducing a new AJAX external function/web service
+ *   for a single button. Only ever acts on a ticket a report row already
+ *   shows (re-scoped to this instance below before use, same as every other
+ *   caller-supplied id in this project -- see RELATIONS.md), never issues a
+ *   new ticket: a user with no ticket at all has nothing here for the toggle
+ *   to act on, and the button does not appear for them. A user holding more
+ *   than one ticket (a rare edge case -- see get_tickets_by_user()'s own
+ *   docblock) has the toggle act on their earliest-issued ticket only; the
+ *   report's own aggregated Checked in/Check-in time columns still correctly
+ *   reflect ALL of their tickets either way.
+ *
  * @package    mod_confcheckin
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -39,6 +64,8 @@ use mod_confcheckin\local\checkin_service;
 use mod_confcheckin\local\instance_helper;
 
 $id = required_param('id', PARAM_INT);
+$toggleticketid = optional_param('togglecheckin', 0, PARAM_INT);
+$targetstate = optional_param('checkedin', 0, PARAM_BOOL);
 
 require_login();
 
@@ -49,6 +76,24 @@ $PAGE->set_url($pageurl);
 $PAGE->set_title(format_string($confcheckin->name) . ': ' . get_string('checkinreport', 'confcheckin'));
 $PAGE->set_heading(format_string($course->fullname));
 $PAGE->set_context($context);
+
+$cantogglecheckin = has_capability('mod/confcheckin:scancheckin', $context);
+
+if ($toggleticketid) {
+    require_capability('mod/confcheckin:scancheckin', $context);
+    require_sesskey();
+
+    // Re-scope the caller-supplied ticket id to THIS instance before acting on it
+    // -- see this file's own docblock/RELATIONS.md for why every id-taking entry
+    // point in this project does this.
+    $ticket = $DB->get_record('confcheckin_ticket', ['id' => $toggleticketid, 'confcheckin' => $confcheckin->id]);
+    if (!$ticket) {
+        throw new \moodle_exception('error:invalidticket', 'confcheckin');
+    }
+
+    checkin_service::set_checkin((int) $ticket->id, $targetstate, (int) $USER->id);
+    redirect($pageurl);
+}
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(format_string($confcheckin->name), 2);
@@ -68,46 +113,119 @@ if (!$enrolledusers) {
     exit;
 }
 
-$table = new html_table();
-$table->head = [
-    get_string('fullname'),
-    get_string('tickettypename', 'confcheckin'),
-    get_string('checkedin', 'confcheckin'),
-    get_string('checkintime', 'confcheckin'),
+$PAGE->requires->js_call_amd('mod_confcheckin/report_table', 'init');
+
+// Column key => header label. Keys become both the header's data-column (so
+// amd/src/report_table.js knows which <td> data-column to read per row when
+// re-ordering) and are reused per row below when building each cell.
+$columns = [
+    'fullname'    => get_string('fullname'),
+    'tickettype'  => get_string('tickettypename', 'confcheckin'),
+    'checkedin'   => get_string('checkedin', 'confcheckin'),
+    'checkintime' => get_string('checkintime', 'confcheckin'),
 ];
-$table->attributes['class'] = 'generaltable';
+
+$table = new html_table();
+$head = [];
+foreach ($columns as $key => $label) {
+    $sortbutton = html_writer::tag('button', $label . ' '
+        . html_writer::tag('span', '', ['class' => 'mod_confcheckin-report-sortarrow', 'aria-hidden' => 'true']), [
+        'type'  => 'button',
+        'class' => 'mod_confcheckin-report-sortbutton',
+    ]);
+    $headercell = new html_table_cell($sortbutton);
+    $headercell->attributes['data-column'] = $key;
+    $headercell->attributes['aria-sort'] = 'none';
+    $head[] = $headercell;
+}
+if ($cantogglecheckin) {
+    $head[] = '';
+}
+$table->head = $head;
+$table->attributes['class'] = 'generaltable mod_confcheckin-report-table';
 
 foreach ($enrolledusers as $user) {
     $tickets = $ticketsbyuser[(int) $user->id] ?? [];
 
     $profileurl = new moodle_url('/user/view.php', ['id' => $user->id, 'course' => $course->id]);
-    $namelink = html_writer::link($profileurl, fullname($user));
+    $namecell = new html_table_cell(html_writer::link($profileurl, fullname($user)));
+    $namecell->attributes['data-column'] = 'fullname';
+    $namecell->attributes['data-sort-value'] = fullname($user);
 
     if ($tickets) {
         $tickettypenames = array_unique(array_map(
             fn($ticket) => format_string($ticket->tickettypename),
             $tickets
         ));
-        $tickettypecell = implode(', ', $tickettypenames);
+        $tickettypetext = implode(', ', $tickettypenames);
 
         $checkedintickets = array_filter($tickets, fn($ticket) => $ticket->checkedintime !== null);
+        $ischeckedin = (bool) $checkedintickets;
         if ($checkedintickets) {
-            $ischeckedin = get_string('yes');
-            $checkintimecell = implode(', ', array_map(
+            $checkedintext = get_string('yes');
+            $latestcheckintime = max(array_map(fn($ticket) => (int) $ticket->checkedintime, $checkedintickets));
+            $checkintimetext = implode(', ', array_map(
                 fn($ticket) => userdate((int) $ticket->checkedintime),
                 $checkedintickets
             ));
         } else {
-            $ischeckedin = get_string('no');
-            $checkintimecell = '-';
+            $checkedintext = get_string('no');
+            $latestcheckintime = 0;
+            $checkintimetext = '-';
         }
     } else {
-        $tickettypecell = get_string('noticketheld', 'confcheckin');
-        $ischeckedin = get_string('no');
-        $checkintimecell = '-';
+        $tickettypetext = get_string('noticketheld', 'confcheckin');
+        $ischeckedin = false;
+        $checkedintext = get_string('no');
+        $latestcheckintime = 0;
+        $checkintimetext = '-';
     }
 
-    $table->data[] = [$namelink, $tickettypecell, $ischeckedin, $checkintimecell];
+    $tickettypecell = new html_table_cell($tickettypetext);
+    $tickettypecell->attributes['data-column'] = 'tickettype';
+    $tickettypecell->attributes['data-sort-value'] = $tickettypetext;
+
+    $checkedincell = new html_table_cell($checkedintext);
+    $checkedincell->attributes['data-column'] = 'checkedin';
+    // Sorts as a boolean group regardless of the translated Yes/No text (a
+    // string sort would not reliably group them together in every language).
+    $checkedincell->attributes['data-sort-value'] = $ischeckedin ? '1' : '0';
+
+    $checkintimecell = new html_table_cell($checkintimetext);
+    $checkintimecell->attributes['data-column'] = 'checkintime';
+    // Sorts by the raw timestamp, not the locale-formatted display text (which
+    // would not sort chronologically as a plain string).
+    $checkintimecell->attributes['data-sort-value'] = (string) $latestcheckintime;
+
+    $row = [$namecell, $tickettypecell, $checkedincell, $checkintimecell];
+
+    if ($cantogglecheckin) {
+        if ($tickets) {
+            // Earliest-issued ticket first (get_tickets_by_user() orders by userid
+            // then ticket type, not ticket id -- re-sort here so "the ticket the
+            // toggle acts on" is well-defined and stable) -- see this file's own
+            // docblock for why a multi-ticket holder's toggle targets only this one.
+            $ticketsbyid = $tickets;
+            usort($ticketsbyid, fn($a, $b) => $a->id <=> $b->id);
+            $primaryticket = $ticketsbyid[0];
+            $primarycheckedin = $primaryticket->checkedintime !== null;
+
+            $togglelabel = $primarycheckedin
+                ? get_string('removecheckin', 'confcheckin')
+                : get_string('checkin', 'confcheckin');
+            $toggleurl = new moodle_url($pageurl, [
+                'togglecheckin' => $primaryticket->id,
+                'checkedin'     => $primarycheckedin ? 0 : 1,
+                'sesskey'       => sesskey(),
+            ]);
+            $toggleclass = 'btn btn-sm ' . ($primarycheckedin ? 'btn-outline-danger' : 'btn-outline-success');
+            $row[] = html_writer::link($toggleurl, $togglelabel, ['class' => $toggleclass]);
+        } else {
+            $row[] = '';
+        }
+    }
+
+    $table->data[] = $row;
 }
 
 echo html_writer::table($table);

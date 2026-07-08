@@ -151,3 +151,42 @@
     max-height: 20rem;
     overflow-y: auto;
 }
+
+/*
+ * Sortable-column headers on report.php's check-in report (user request,
+ * 2026-07-08) -- see amd/src/report_table.js for the click behaviour. The
+ * arrow indicator is pure CSS, driven off the header's own aria-sort
+ * attribute (kept in sync with the actual sort state by that same script), so
+ * there is never a mismatch between what the arrow shows and what's true.
+ */
+.mod_confcheckin-report-sortbutton {
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    color: inherit;
+}
+
+.mod_confcheckin-report-sortbutton:hover,
+.mod_confcheckin-report-sortbutton:focus {
+    text-decoration: underline;
+}
+
+.mod_confcheckin-report-sortarrow::after {
+    content: "\2195";
+    display: inline-block;
+    margin-left: 0.3rem;
+    opacity: 0.4;
+}
+
+.mod_confcheckin-report-table th[aria-sort="ascending"] .mod_confcheckin-report-sortarrow::after {
+    content: "\2191";
+    opacity: 1;
+}
+
+.mod_confcheckin-report-table th[aria-sort="descending"] .mod_confcheckin-report-sortarrow::after {
+    content: "\2193";
+    opacity: 1;
+}

@@ -99,6 +99,39 @@ class checkin_service {
     }
 
     /**
+     * Sets or clears a ticket's check-in state directly by ticket id (user
+     * request, 2026-07-08: a manual check-in/remove-check-in toggle on
+     * report.php, for a ticket holder who doesn't have their QR code to hand,
+     * or to undo an accidental/mistaken scan). Idempotent in both directions,
+     * matching record_checkin()'s own behaviour: setting true when already
+     * checked in, or false when not checked in, is a no-op rather than an error.
+     *
+     * @param int $ticketid The confcheckin_ticket id
+     * @param bool $checkedin The desired check-in state
+     * @param int $scannedby The user id performing this action (recorded only
+     *     when transitioning to checked-in; a cleared check-in leaves no trace
+     *     of who cleared it, matching a DELETE having no "who" column to put it in)
+     * @return void
+     */
+    public static function set_checkin(int $ticketid, bool $checkedin, int $scannedby): void {
+        global $DB;
+
+        $existing = $DB->get_record('confcheckin_checkin', ['ticketid' => $ticketid]);
+
+        if ($checkedin) {
+            if (!$existing) {
+                $DB->insert_record('confcheckin_checkin', (object) [
+                    'ticketid'    => $ticketid,
+                    'scannedby'   => $scannedby,
+                    'timecreated' => time(),
+                ]);
+            }
+        } else if ($existing) {
+            $DB->delete_records('confcheckin_checkin', ['id' => $existing->id]);
+        }
+    }
+
+    /**
      * Returns every confcheckin_ticket row for an instance, decorated with its
      * ticket type name and (if checked in) check-in timestamp -- the data
      * report.php needs, keyed by userid so it can be looked up per enrolled user.

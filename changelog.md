@@ -2,6 +2,28 @@
 
 ## [0.1.0] - Unreleased
 
+- User request (2026-07-08): two enhancements to the check-in report added the same
+  day.
+  1. **Sortable columns** (`amd/src/report_table.js`): clicking a column header
+     re-orders the already-rendered rows client-side (ascending, then descending on
+     a second click; `aria-sort` kept in sync for accessibility) -- no page reload,
+     no new server-side sorting logic. The Checked in and Check-in time columns sort
+     by a normalised `data-sort-value` (a 1/0 boolean and a raw unix timestamp
+     respectively), not their displayed, translated/locale-formatted text, so
+     sorting stays correct in any language and sorts check-in time chronologically
+     rather than alphabetically.
+  2. **Manual check-in/remove-check-in toggle**: a "Check in"/"Remove check-in"
+     button per row, visible only to holders of `mod/confcheckin:scancheckin` (a
+     separate capability check from the report's own `viewreport`, even though
+     today's archetype defaults grant both to the same roles) and only for a user
+     who holds at least one ticket (nothing to attach a check-in to otherwise, and
+     this does not issue a new ticket). Implemented as a plain GET link + sesskey +
+     redirect -- the same pattern `orphanedtickets.php`'s own revoke-ticket action
+     already uses -- rather than a new AJAX external function. A new
+     `checkin_service::set_checkin()` does the actual insert/delete, idempotent in
+     both directions like `record_checkin()` already is. A user holding more than
+     one ticket (rare -- see `get_tickets_by_user()`'s docblock) has the toggle act
+     on their earliest-issued ticket only.
 - User request (2026-07-08): two changes.
   1. **QR scanner success feedback**: scanning a QR code with the camera (a genuinely
      new check-in, not a re-scan of an already-checked-in ticket) now flashes the
