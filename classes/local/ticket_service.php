@@ -116,6 +116,7 @@ class ticket_service {
             }
 
             self::require_eligible($confcheckinid, $tickettype, $userid);
+            self::require_within_maxperuser($tickettype, $userid);
 
             self::reserve_capacity_locked($tickettype);
 
@@ -173,6 +174,13 @@ class ticket_service {
             // trust a stored id transitively without re-verifying at the point of use.
             $tickettype = self::lock_tickettype($confcheckinid, (int) $promocode->tickettypeid);
 
+            // Unlike require_eligible() (deliberately skipped here -- see that
+            // method's own docblock: a promo code is its own authorisation), the
+            // maxperuser cap IS still enforced for a promo redemption: a code is
+            // meant to unlock eligibility, not to bypass a hard per-user ticket
+            // limit on the type it grants.
+            self::require_within_maxperuser($tickettype, $userid);
+
             self::reserve_capacity_locked($tickettype);
 
             $DB->set_field('confcheckin_promocode', 'timesused', (int) $promocode->timesused + 1, ['id' => $promocode->id]);
@@ -221,6 +229,7 @@ class ticket_service {
             $tickettype = self::lock_tickettype($confcheckinid, $tickettypeid);
 
             self::require_eligible($confcheckinid, $tickettype, $userid);
+            self::require_within_maxperuser($tickettype, $userid);
 
             self::reserve_capacity_locked($tickettype);
 
@@ -480,6 +489,36 @@ class ticket_service {
     }
 
     /**
+     * Whether a given user has already reached (or, in principle, exceeded) a
+     * ticket type's maxperuser cap -- for display purposes only (user request,
+     * 2026-07-08: purchase.php deciding whether to show a "Get ticket"/"Buy"
+     * button at all, so a user who is already at their limit sees a clear reason
+     * instead of a confusing failed-purchase error after clicking). Same
+     * "read-only, can go stale the instant after it's returned, never for the
+     * actual purchase decision" caveat as has_capacity_for_display() above --
+     * require_within_maxperuser() (called inside each issue_*() method's own
+     * locked transaction) is the real enforcement.
+     *
+     * @param \stdClass $tickettype A confcheckin_tickettype record
+     * @param int $userid The user id to check
+     * @return bool
+     */
+    public static function has_reached_maxperuser_for_display(\stdClass $tickettype, int $userid): bool {
+        global $DB;
+
+        if ($tickettype->maxperuser === null) {
+            return false;
+        }
+
+        $existingcount = $DB->count_records('confcheckin_ticket', [
+            'tickettypeid' => $tickettype->id,
+            'userid'       => $userid,
+        ]);
+
+        return $existingcount >= (int) $tickettype->maxperuser;
+    }
+
+    /**
      * Locks a confcheckin_tickettype row (see this class's docblock) and re-verifies it
      * belongs to the given confcheckin instance.
      *
@@ -553,6 +592,46 @@ class ticket_service {
 
         if (!eligibility::is_eligible_for_tickettype($userid, $tickettype, $confprogramcmid)) {
             throw new \moodle_exception('error:noteligible', 'confcheckin');
+        }
+    }
+
+    /**
+     * Re-checks (server-side, defence-in-depth) that issuing one more ticket of
+     * this type to this user would not exceed the ticket type's configured
+     * maxperuser cap (user request, 2026-07-08; default 1, null means unlimited --
+     * see db/install.xml's own field comment). Called from issue_free_ticket(),
+     * issue_purchased_ticket() and redeem_promocode() -- the three user-initiated
+     * "claim a ticket" paths -- but deliberately NOT from issue_granted_ticket(),
+     * whose own idempotency (see that method's docblock) already caps a single
+     * user at exactly one ticket per type regardless of this setting, and whose
+     * whole premise (a group/enrolment-triggered comp) is orthogonal to a
+     * self-service purchase limit.
+     *
+     * Must be called on an ALREADY-LOCKED ticket type (see lock_tickettype())
+     * within the same still-open transaction: locking the ticket type row also
+     * serialises concurrent issuance attempts for that type, which is what stops
+     * two rapid double-submits from the same user both passing this count check
+     * before either has actually inserted its row.
+     *
+     * @param \stdClass $tickettype A ticket type record already locked by lock_tickettype()
+     * @param int $userid The user id a new ticket would be issued to
+     * @return void
+     * @throws \moodle_exception if the user already holds maxperuser (or more) tickets of this type
+     */
+    private static function require_within_maxperuser(\stdClass $tickettype, int $userid): void {
+        global $DB;
+
+        if ($tickettype->maxperuser === null) {
+            return;
+        }
+
+        $existingcount = $DB->count_records('confcheckin_ticket', [
+            'tickettypeid' => $tickettype->id,
+            'userid'       => $userid,
+        ]);
+
+        if ($existingcount >= (int) $tickettype->maxperuser) {
+            throw new \moodle_exception('error:maxperuserexceeded', 'confcheckin');
         }
     }
 

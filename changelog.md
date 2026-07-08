@@ -2,6 +2,27 @@
 
 ## [0.1.0] - Unreleased
 
+- User request (2026-07-08): two changes to ticket types.
+  1. **Default currency changed from USD to JPY** for new ticket types (both the
+     `confcheckin_tickettype.currency` column default and `tickettype_form`'s own
+     default). Existing ticket types keep whatever currency they already have --
+     every row was written with an explicit currency value, so this only affects
+     what a NEW ticket type starts with.
+  2. **New "Max tickets per user" setting** (`maxperuser`, default 1, blank means
+     unlimited -- the same "blank = unlimited" convention `capacity` already
+     uses): caps how many tickets of a type a single user may hold at once.
+     Enforced server-side in `classes/local/ticket_service.php`'s
+     `require_within_maxperuser()`, called from the three user-initiated "claim a
+     ticket" paths (`issue_free_ticket()`, `issue_purchased_ticket()`,
+     `redeem_promocode()`) inside each one's existing locked-tickettype
+     transaction, so a race between two rapid claims from the same user is still
+     safe. Deliberately NOT enforced in `issue_granted_ticket()`, whose own
+     idempotency already caps a user at one ticket per type regardless of this
+     setting. `purchase.php` also gained a `has_reached_maxperuser_for_display()`
+     pre-check (mirroring the existing sold-out capacity check) so a user who has
+     already hit their limit sees a clear "Limit reached" notice instead of a
+     confusing failed-purchase error after clicking.
+
 - User request (2026-07-08): two enhancements to the check-in report added the same
   day.
   1. **Sortable columns** (`amd/src/report_table.js`): clicking a column header

@@ -34,6 +34,11 @@ require_once($CFG->dirroot . '/mod/confcheckin/lib.php');
  * groupid's "group membership grants a ticket" -- see
  * classes/local/ticket_service.php::insert_ticket().
  *
+ * maxperuser (user request, 2026-07-08) is a per-ticket-type cap on how many
+ * tickets a single user may hold at once (blank means unlimited, matching
+ * capacity's own "blank = unlimited" convention above it; default 1), enforced
+ * in classes/local/ticket_service.php::require_within_maxperuser().
+ *
  * @package    mod_confcheckin
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -74,11 +79,16 @@ class tickettype_form extends \moodleform {
 
         $mform->addElement('select', 'currency', get_string('currency', 'confcheckin'), confcheckin_get_currency_options());
         $mform->setType('currency', PARAM_ALPHA);
-        $mform->setDefault('currency', 'USD');
+        $mform->setDefault('currency', 'JPY');
 
         $mform->addElement('text', 'capacity', get_string('capacity', 'confcheckin'), ['size' => 6]);
         $mform->setType('capacity', PARAM_RAW);
         $mform->addHelpButton('capacity', 'capacity', 'confcheckin');
+
+        $mform->addElement('text', 'maxperuser', get_string('maxperuser', 'confcheckin'), ['size' => 6]);
+        $mform->setType('maxperuser', PARAM_RAW);
+        $mform->setDefault('maxperuser', 1);
+        $mform->addHelpButton('maxperuser', 'maxperuser', 'confcheckin');
 
         $mform->addElement('advcheckbox', 'presenteronly', get_string('presenteronly', 'confcheckin'));
         $mform->addHelpButton('presenteronly', 'presenteronly', 'confcheckin');
@@ -186,6 +196,11 @@ class tickettype_form extends \moodleform {
         $capacity = trim((string) ($data['capacity'] ?? ''));
         if ($capacity !== '' && (!ctype_digit($capacity) || (int) $capacity < 1)) {
             $errors['capacity'] = get_string('error:invalidcapacity', 'confcheckin');
+        }
+
+        $maxperuser = trim((string) ($data['maxperuser'] ?? ''));
+        if ($maxperuser !== '' && (!ctype_digit($maxperuser) || (int) $maxperuser < 1)) {
+            $errors['maxperuser'] = get_string('error:invalidmaxperuser', 'confcheckin');
         }
 
         if (

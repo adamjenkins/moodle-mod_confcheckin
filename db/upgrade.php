@@ -134,5 +134,29 @@ function xmldb_confcheckin_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026070701, 'confcheckin');
     }
 
+    if ($oldversion < 2026070801) {
+        // User request (2026-07-08): default currency changed from USD to JPY for
+        // NEW ticket types -- existing rows keep whatever currency they already
+        // have, since every row was written with an explicit currency value (the
+        // column default only ever applied to a direct insert that omitted it).
+        $table = new xmldb_table('confcheckin_tickettype');
+
+        $field = new xmldb_field('currency', XMLDB_TYPE_CHAR, '3', null, XMLDB_NOTNULL, null, 'JPY', 'price');
+        if ($dbman->field_exists($table, $field)) {
+            $dbman->change_field_default($table, $field);
+        }
+
+        // "Max tickets per user" (user request, 2026-07-08): a per-ticket-type cap
+        // on how many a single user may hold, default 1, null means unlimited --
+        // see db/install.xml's field comment and
+        // classes/local/ticket_service.php's require_within_maxperuser().
+        $field = new xmldb_field('maxperuser', XMLDB_TYPE_INTEGER, '10', null, null, null, '1', 'capacity');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026070801, 'confcheckin');
+    }
+
     return true;
 }

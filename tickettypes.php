@@ -99,6 +99,7 @@ if ($edittickettype) {
         'price'         => $edittickettype->price,
         'currency'      => $edittickettype->currency,
         'capacity'      => $edittickettype->capacity,
+        'maxperuser'    => $edittickettype->maxperuser,
         'presenteronly' => $edittickettype->presenteronly,
         'validfrom'     => $edittickettype->validfrom,
         'validto'       => $edittickettype->validto,
@@ -119,6 +120,7 @@ if ($tickettypeform->is_cancelled()) {
 
     $price = confcheckin_parse_price((string) $formdata->price);
     $capacityraw = trim((string) $formdata->capacity);
+    $maxperuserraw = trim((string) $formdata->maxperuser);
 
     $groupid = !empty($formdata->groupid) ? (int) $formdata->groupid : null;
     $enrolid = !empty($formdata->enrolid) ? (int) $formdata->enrolid : null;
@@ -159,6 +161,7 @@ if ($tickettypeform->is_cancelled()) {
         'price'               => number_format($price, 2, '.', ''),
         'currency'            => $formdata->currency,
         'capacity'            => $capacityraw === '' ? null : (int) $capacityraw,
+        'maxperuser'          => $maxperuserraw === '' ? null : (int) $maxperuserraw,
         'presenteronly'       => (int) $formdata->presenteronly,
         'validfrom'           => !empty($formdata->validfrom) ? (int) $formdata->validfrom : null,
         'validto'             => !empty($formdata->validto) ? (int) $formdata->validto : null,
@@ -225,6 +228,7 @@ if ($tickettypes) {
         get_string('tickettypename', 'confcheckin'),
         get_string('price', 'confcheckin'),
         get_string('capacity', 'confcheckin'),
+        get_string('maxperuser', 'confcheckin'),
         get_string('presenteronly', 'confcheckin'),
         get_string('visible', 'confcheckin'),
         get_string('autogrant', 'confcheckin'),
@@ -238,6 +242,10 @@ if ($tickettypes) {
         $capacitylabel = $tickettype->capacity === null
             ? get_string('unlimited', 'confcheckin')
             : ((int) $tickettype->soldcount . ' / ' . (int) $tickettype->capacity);
+
+        $maxperuserlabel = $tickettype->maxperuser === null
+            ? get_string('unlimited', 'confcheckin')
+            : (string) (int) $tickettype->maxperuser;
 
         $autograntlabel = '-';
         if (!empty($tickettype->groupid)) {
@@ -297,6 +305,7 @@ if ($tickettypes) {
             format_string($tickettype->name),
             \core_payment\helper::get_cost_as_string((float) $tickettype->price, $tickettype->currency),
             $capacitylabel,
+            $maxperuserlabel,
             $tickettype->presenteronly ? get_string('yes') : get_string('no'),
             $tickettype->visible ? get_string('yes') : get_string('no'),
             $autograntlabel,

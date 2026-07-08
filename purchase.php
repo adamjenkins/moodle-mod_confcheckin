@@ -205,6 +205,7 @@ foreach ($tickettypes as $tickettype) {
     }
 
     $haspcapacity = ticket_service::has_capacity_for_display($tickettype);
+    $reachedmaxperuser = ticket_service::has_reached_maxperuser_for_display($tickettype, (int) $USER->id);
     $isfree = confcheckin_parse_price((string) $tickettype->price) !== false
         && abs((float) $tickettype->price) < 0.005;
 
@@ -225,6 +226,8 @@ foreach ($tickettypes as $tickettype) {
 
     if (!$haspcapacity) {
         echo $OUTPUT->notification(get_string('soldout', 'confcheckin'), 'warning');
+    } else if ($reachedmaxperuser) {
+        echo $OUTPUT->notification(get_string('maxperuserreached', 'confcheckin'), 'warning');
     } else if ($isfree) {
         echo html_writer::tag('p', get_string('free', 'confcheckin'), ['class' => 'font-weight-bold']);
         echo html_writer::start_tag('form', ['method' => 'post', 'action' => $pageurl->out(false)]);
