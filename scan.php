@@ -89,7 +89,33 @@ echo html_writer::tag(
     get_string('scanwithcamera', 'confcheckin'),
     ['type' => 'button', 'class' => 'btn btn-secondary mt-2 mod_confcheckin-scanner-cameratoggle', 'hidden' => 'hidden']
 );
+
+// Mutes the success beep only (user request, 2026-07-08); the visual flash/checkmark
+// below are silent regardless, so nothing else needs to respect this. Not gated behind
+// the camera-support check above: the beep also plays for the always-available text-
+// field/hardware-barcode-scanner path, so this toggle is relevant even where the
+// camera button itself never appears.
+echo html_writer::start_tag('label', ['class' => 'mod_confcheckin-scanner-mutelabel mt-2']);
+echo html_writer::empty_tag('input', [
+    'type'  => 'checkbox',
+    'class' => 'mod_confcheckin-scanner-mute',
+]);
+echo ' ' . get_string('mutescansound', 'confcheckin');
+echo html_writer::end_tag('label');
+
+// A wrapper around <video> (user request, 2026-07-08): gives the border-flash-green
+// success cue somewhere to paint (a border directly on <video> would be clipped/replaced
+// oddly across browsers when the element's own aspect ratio changes), and somewhere to
+// absolutely-position the checkmark overlay centred over the live camera image. Hidden
+// alongside the video itself (see amd/src/scanner.js's start/stopCameraScanning()) so
+// nothing -- not even an empty bordered box -- shows before the camera is actually on.
+echo html_writer::start_div('mod_confcheckin-scanner-videowrap', ['hidden' => 'hidden']);
 echo html_writer::empty_tag('video', ['class' => 'mod_confcheckin-scanner-video', 'hidden' => 'hidden']);
+echo html_writer::tag('i', '', [
+    'class'       => 'mod_confcheckin-scanner-checkmark fa fa-check-circle',
+    'aria-hidden' => 'true',
+]);
+echo html_writer::end_div();
 
 echo html_writer::div('', 'mod_confcheckin-scanner-result', ['aria-live' => 'polite']);
 echo html_writer::start_tag('ul', ['class' => 'mod_confcheckin-scanner-log']);

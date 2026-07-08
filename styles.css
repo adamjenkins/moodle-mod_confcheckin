@@ -27,12 +27,99 @@
     font-size: 1.25rem;
 }
 
-.mod_confcheckin-scanner-video {
-    width: 100%;
+.mod_confcheckin-scanner-mutelabel {
+    display: block;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+/*
+ * Success feedback (user request, 2026-07-08): border-flash-green + checkmark pop
+ * on the camera preview, plus a beep (see amd/src/scanner.js's playSuccessBeep()).
+ * The wrapper (not <video> itself) carries the border/box-shadow flash and is the
+ * positioning context for the checkmark overlay -- see scan.php's own comment for
+ * why. Both animations are triggered by toggling .mod_confcheckin-scanner-flash
+ * (flashCameraSuccess()); prefers-reduced-motion below shortens rather than removes
+ * them entirely, since the colour/icon change itself is the actual feedback signal,
+ * not just decorative motion.
+ */
+.mod_confcheckin-scanner-videowrap {
+    position: relative;
     max-width: 30rem;
     margin-top: 0.5rem;
-    border-radius: 4px;
+    border-radius: 6px;
+    border: 4px solid transparent;
+}
+
+.mod_confcheckin-scanner-video {
+    display: block;
+    width: 100%;
+    border-radius: 2px;
     background: #000;
+}
+
+.mod_confcheckin-scanner-checkmark {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.4);
+    font-size: 4rem;
+    color: #28a745;
+    text-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    pointer-events: none;
+}
+
+@keyframes mod_confcheckin-scanner-borderflash {
+    0% {
+        border-color: #28a745;
+        box-shadow: 0 0 0 4px rgba(40, 167, 69, 0.45);
+    }
+
+    100% {
+        border-color: transparent;
+        box-shadow: 0 0 0 4px rgba(40, 167, 69, 0);
+    }
+}
+
+@keyframes mod_confcheckin-scanner-checkmarkpop {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.4);
+    }
+
+    20% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1.15);
+    }
+
+    35% {
+        transform: translate(-50%, -50%) scale(1);
+    }
+
+    75% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+.mod_confcheckin-scanner-flash {
+    animation: mod_confcheckin-scanner-borderflash 0.7s ease-out;
+}
+
+.mod_confcheckin-scanner-flash .mod_confcheckin-scanner-checkmark {
+    animation: mod_confcheckin-scanner-checkmarkpop 0.9s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mod_confcheckin-scanner-flash,
+    .mod_confcheckin-scanner-flash .mod_confcheckin-scanner-checkmark {
+        animation-duration: 0.01s;
+    }
 }
 
 .mod_confcheckin-scanner-result {

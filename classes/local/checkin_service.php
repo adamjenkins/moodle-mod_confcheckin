@@ -97,4 +97,38 @@ class checkin_service {
 
         return $DB->record_exists('confcheckin_checkin', ['ticketid' => $ticketid]);
     }
+
+    /**
+     * Returns every confcheckin_ticket row for an instance, decorated with its
+     * ticket type name and (if checked in) check-in timestamp -- the data
+     * report.php needs, keyed by userid so it can be looked up per enrolled user.
+     *
+     * A user may hold more than one ticket for the same instance (see
+     * db/install.xml's own comment on confcheckin_ticket: "at most one active
+     * ticket per user" is a business rule, not a DB constraint, e.g. after a
+     * refund + repurchase), so each value is an array of ticket rows, never a
+     * single one.
+     *
+     * @param int $confcheckinid The confcheckin instance id
+     * @return array<int, \stdClass[]> Ticket rows (each with 'tickettypename' and
+     *     'checkedintime', the latter null if not checked in), keyed by userid
+     */
+    public static function get_tickets_by_user(int $confcheckinid): array {
+        global $DB;
+
+        $sql = "SELECT t.id, t.userid, t.tickettypeid, tt.name AS tickettypename, c.timecreated AS checkedintime
+                  FROM {confcheckin_ticket} t
+                  JOIN {confcheckin_tickettype} tt ON tt.id = t.tickettypeid
+             LEFT JOIN {confcheckin_checkin} c ON c.ticketid = t.id
+                 WHERE t.confcheckin = :confcheckin
+              ORDER BY t.userid, tt.sortorder, tt.name";
+        $records = $DB->get_records_sql($sql, ['confcheckin' => $confcheckinid]);
+
+        $byuser = [];
+        foreach ($records as $record) {
+            $byuser[(int) $record->userid][] = $record;
+        }
+
+        return $byuser;
+    }
 }

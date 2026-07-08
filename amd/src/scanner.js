@@ -61,6 +61,79 @@ const prependLogEntry = (logEl, text, isError) => {
     logEl.insertBefore(item, logEl.firstChild);
 };
 
+/** localStorage key the mute checkbox's state is persisted under, across page loads. */
+const MUTE_STORAGE_KEY = 'mod_confcheckin_scanner_muted';
+
+/**
+ * Plays a short synthesised "success" beep via the Web Audio API (user request,
+ * 2026-07-08 -- feedback that a scan succeeded, distinct from the visual-only
+ * border flash/checkmark, useful when not looking directly at the screen/camera
+ * preview). Synthesised rather than an audio file asset: matches this module's own
+ * existing preference (see its docblock) for zero-dependency, no-third-party-asset
+ * behaviour, and avoids needing a licensed sound file in the plugin.
+ *
+ * Silently does nothing if muted, or if the Web Audio API is unavailable (e.g. some
+ * older/embedded web views) -- an inability to beep must never break scanning
+ * itself, matching submitToken()'s own "never throw" contract.
+ *
+ * @param {Object} state The module state object
+ */
+const playSuccessBeep = (state) => {
+    if (state.muted) {
+        return;
+    }
+
+    try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+            return;
+        }
+        // Created lazily, on first actual use, and reused after that -- browsers
+        // increasingly require an AudioContext to be created/resumed from within a
+        // user-gesture-triggered call stack; the click that starts camera scanning
+        // (or a form submit) satisfies that, whereas creating it eagerly in init()
+        // would not.
+        if (!state.audioContext) {
+            state.audioContext = new AudioContextClass();
+        }
+        const ctx = state.audioContext;
+
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.value = 880;
+        // Ramp rather than a hard on/off: avoids an audible click at the start/end
+        // of the tone. Exponential ramps can't target exactly 0, hence 0.0001.
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+        oscillator.connect(gain);
+        gain.connect(ctx.destination);
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.2);
+    } catch (exception) {
+        window.console.warn(exception);
+    }
+};
+
+/**
+ * Triggers the camera preview's success flash: a green border pulse plus a
+ * checkmark pop, both pure-CSS animations (see styles.css) restarted here by
+ * removing and re-adding the class -- necessary so two successes in quick
+ * succession (e.g. two attendees scanned back to back) each get their own full
+ * animation instead of the second being a no-op because the class was already
+ * present.
+ *
+ * @param {Object} state The module state object
+ */
+const flashCameraSuccess = (state) => {
+    state.videoWrapEl.classList.remove('mod_confcheckin-scanner-flash');
+    // Forces a reflow so the class removal above is actually applied before it's
+    // added back, or the browser would coalesce the two into a no-op change.
+    void state.videoWrapEl.offsetWidth;
+    state.videoWrapEl.classList.add('mod_confcheckin-scanner-flash');
+};
+
 /**
  * Submits one token: calls the AJAX endpoint, shows the result (success/already
  * checked in/error) in the result banner, and logs it. Never throws -- an AJAX
@@ -90,6 +163,22 @@ const submitToken = async(state, qrtoken) => {
             + (result.alreadycheckedin ? 'mod_confcheckin-scanner-result-warning' : 'mod_confcheckin-scanner-result-success');
         state.resultEl.textContent = message;
         prependLogEntry(state.logEl, message, false);
+
+        // Success feedback (user request, 2026-07-08): only for a genuinely NEW
+        // check-in, not a re-scan of an already-checked-in ticket -- an
+        // "alreadycheckedin" result already gets its own distinct warning styling
+        // above, and re-beeping/re-flashing green on every accidental re-scan of a
+        // still-visible QR code would be noisy and would muddy "this just worked"
+        // as a signal. The beep plays for any successful input path (typed, a USB/
+        // Bluetooth hardware scanner acting as a keyboard, or camera); the border
+        // flash/checkmark are camera-only, since there is no video preview to
+        // overlay them on otherwise.
+        if (!result.alreadycheckedin) {
+            playSuccessBeep(state);
+            if (state.cameraActive) {
+                flashCameraSuccess(state);
+            }
+        }
 
         return result;
     } catch (exception) {
@@ -126,6 +215,7 @@ const startCameraScanning = async(state) => {
 
     state.videoEl.srcObject = state.mediaStream;
     state.videoEl.hidden = false;
+    state.videoWrapEl.hidden = false;
     await state.videoEl.play();
 
     let detector;
@@ -194,6 +284,7 @@ const stopCameraScanning = (state) => {
         state.mediaStream = null;
     }
     state.videoEl.hidden = true;
+    state.videoWrapEl.hidden = true;
 };
 
 /**
@@ -221,14 +312,28 @@ export const init = async(cmid) => {
         resultEl: root.querySelector('.mod_confcheckin-scanner-result'),
         logEl: root.querySelector('.mod_confcheckin-scanner-log'),
         videoEl: root.querySelector('.mod_confcheckin-scanner-video'),
+        videoWrapEl: root.querySelector('.mod_confcheckin-scanner-videowrap'),
         cameraToggleEl: root.querySelector('.mod_confcheckin-scanner-cameratoggle'),
+        muteToggleEl: root.querySelector('.mod_confcheckin-scanner-mute'),
         inputEl: root.querySelector('.mod_confcheckin-scanner-input'),
         cameraActive: false,
         mediaStream: null,
         lastDetected: null,
         lastDetectedTime: 0,
+        // Persisted across page loads (user request, 2026-07-08): re-checking this
+        // desk's device into a fresh scan.php load, e.g. after a browser refresh
+        // mid-event, shouldn't un-mute a volume choice already made for a noisy
+        // check-in desk.
+        muted: window.localStorage.getItem(MUTE_STORAGE_KEY) === '1',
+        audioContext: null,
         strings: {scanning, checkedin, alreadycheckedin, scanwithcamera, cameraerror},
     };
+
+    state.muteToggleEl.checked = state.muted;
+    state.muteToggleEl.addEventListener('change', () => {
+        state.muted = state.muteToggleEl.checked;
+        window.localStorage.setItem(MUTE_STORAGE_KEY, state.muted ? '1' : '0');
+    });
 
     const form = root.querySelector('.mod_confcheckin-scanner-form');
     form.addEventListener('submit', (event) => {

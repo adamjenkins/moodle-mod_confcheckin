@@ -98,6 +98,12 @@ if (has_capability('mod/confcheckin:scancheckin', $context)) {
         get_string('scancheckin', 'confcheckin')
     );
 }
+if (has_capability('mod/confcheckin:viewreport', $context)) {
+    $links[] = html_writer::link(
+        new moodle_url('/mod/confcheckin/report.php', ['id' => $cm->id]),
+        get_string('checkinreport', 'confcheckin')
+    );
+}
 
 if ($links) {
     echo html_writer::alist($links);

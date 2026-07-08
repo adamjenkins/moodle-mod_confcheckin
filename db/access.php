@@ -87,6 +87,25 @@ $capabilities = [
         ],
     ],
 
+    // View the check-in report (user request, 2026-07-08): every enrolled
+    // participant's ticket-holding and check-in status, including who hasn't
+    // checked in and who holds no ticket at all. Flagged RISK_PERSONAL like
+    // downloadbadges above, for the same reason -- a bulk view of many other
+    // users' personal data (name, check-in time, ticket-holding), not a
+    // single-user self-view. editingteacher/manager only, matching every other
+    // organiser-facing capability in this file -- deliberately not plain
+    // teacher, same as managetickettypes/scancheckin/downloadbadges/
+    // managetemplates.
+    'mod/confcheckin:viewreport' => [
+        'riskbitmask'  => RISK_PERSONAL,
+        'captype'      => 'read',
+        'contextlevel' => CONTEXT_MODULE,
+        'archetypes'   => [
+            'editingteacher' => CAP_ALLOW,
+            'manager'        => CAP_ALLOW,
+        ],
+    ],
+
     // Download your own attendance certificate. A "view/download your own thing"
     // capability, no elevated risk.
     'mod/confcheckin:viewowncertificate' => [

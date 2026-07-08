@@ -2,6 +2,24 @@
 
 ## [0.1.0] - Unreleased
 
+- User request (2026-07-08): two changes.
+  1. **QR scanner success feedback**: scanning a QR code with the camera (a genuinely
+     new check-in, not a re-scan of an already-checked-in ticket) now flashes the
+     camera preview's border green, pops a green checkmark over the centre of the
+     video, and plays a short synthesised beep (`amd/src/scanner.js`'s
+     `playSuccessBeep()`, Web Audio API, no audio-file asset). A new "Mute sound"
+     checkbox (persisted in `localStorage` across page loads) mutes the beep only --
+     the visual flash/checkmark are silent regardless. The beep plays for any
+     successful scan path (camera, typed, or a USB/Bluetooth hardware scanner
+     acting as a keyboard); the border flash/checkmark are camera-only, since
+     there's no video preview to overlay them on for the other paths.
+  2. **New check-in report** (`report.php`, `mod/confcheckin:viewreport`,
+     editingteacher/manager only, `RISK_PERSONAL`): lists every user enrolled in
+     the course (not just ticket holders, so people with no ticket and people who
+     haven't checked in yet are both visible), each row showing their name (linked
+     to their course profile), ticket type(s) held (or "No ticket"), and check-in
+     status/time (or "-" if not checked in). Linked from `view.php` alongside the
+     existing organiser-facing links.
 - User request (2026-07-06): added `composer.json` so the plugin can be
   published on Packagist per the
   [Moodle Composer guide](https://moodledev.io/docs/5.2/guides/composer) --
