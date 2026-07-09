@@ -73,6 +73,8 @@ class provider implements
 
         $collection->add_database_table('confcheckin_ticket', [
             'userid'       => 'privacy:metadata:confcheckin_ticket:userid',
+            'tickettypeid' => 'privacy:metadata:confcheckin_ticket:tickettypeid',
+            'promocodeid'  => 'privacy:metadata:confcheckin_ticket:promocodeid',
             'origin'       => 'privacy:metadata:confcheckin_ticket:origin',
             'qrtoken'      => 'privacy:metadata:confcheckin_ticket:qrtoken',
             'timecreated'  => 'privacy:metadata:confcheckin_ticket:timecreated',
@@ -272,6 +274,11 @@ class provider implements
         }
 
         $DB->delete_records('confcheckin_ticket', ['confcheckin' => $cm->instance]);
+
+        // Ticket rows were removed without revoke_ticket()'s per-ticket decrement,
+        // so recompute soldcount from what actually remains (FABLE.md review,
+        // 2026-07-09) -- see ticket_service::recount_soldcount()'s docblock.
+        \mod_confcheckin\local\ticket_service::recount_soldcount((int) $cm->instance);
     }
 
     /**
@@ -315,6 +322,9 @@ class provider implements
                 'confcheckin' => $cm->instance,
                 'userid'      => $user->id,
             ]);
+
+            // See delete_data_for_all_users_in_context()'s matching comment.
+            \mod_confcheckin\local\ticket_service::recount_soldcount((int) $cm->instance);
         }
     }
 
@@ -359,5 +369,8 @@ class provider implements
         }
 
         $DB->delete_records_select('confcheckin_ticket', "confcheckin = :confcheckin AND userid $insql", $params);
+
+        // See delete_data_for_all_users_in_context()'s matching comment.
+        \mod_confcheckin\local\ticket_service::recount_soldcount((int) $cm->instance);
     }
 }

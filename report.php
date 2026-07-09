@@ -102,8 +102,12 @@ echo html_writer::tag('p', get_string('checkinreport_help', 'confcheckin'));
 
 $coursecontext = context_course::instance($course->id);
 // onlyactive => true: a suspended enrolment shouldn't appear as "hasn't checked
-// in yet" alongside people who are actually expected to attend.
-$enrolledusers = get_enrolled_users($coursecontext, '', 0, 'u.*', 'u.lastname, u.firstname', 0, 0, true);
+// in yet" alongside people who are actually expected to attend. Only id, name
+// fields and email are selected -- u.* fetched every column of every enrolled
+// user into memory, a multi-MB page on conference-sized open courses
+// (FABLE.md review, 2026-07-09).
+$reportfields = 'u.id, u.email, u.' . implode(', u.', \core_user\fields::for_name()->get_required_fields());
+$enrolledusers = get_enrolled_users($coursecontext, '', 0, $reportfields, 'u.lastname, u.firstname', 0, 0, true);
 
 $ticketsbyuser = checkin_service::get_tickets_by_user((int) $confcheckin->id);
 

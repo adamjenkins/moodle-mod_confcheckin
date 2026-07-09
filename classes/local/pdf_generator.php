@@ -52,6 +52,12 @@ class pdf_generator {
     public static function default_template(string $templatetype): string {
         $p = static fn (string $name): string => placeholder::wrap($name);
 
+        // Every human-readable fragment comes from a lang string (FABLE.md review,
+        // 2026-07-09: they were hard-coded English, so a Japanese site that never
+        // customised its templates handed out English certificates -- and
+        // templates.php pre-fills the editor with this content too). Rendered in
+        // whatever language is current when the fallback is used/pre-filled, same
+        // as any other get_string() output.
         $templates = [
             'badge' => '<div style="text-align:center;">'
                 . '<h2>' . $p('fullname') . '</h2>'
@@ -63,14 +69,14 @@ class pdf_generator {
                 . '<p><strong>' . $p('fullname') . '</strong> &mdash; ' . $p('tickettype') . '</p>'
                 . '<div>' . $p('qrcode') . '</div>',
             'receipt' => '<h2>' . $p('confcheckinname') . '</h2>'
-                . '<p>Receipt for: ' . $p('fullname') . '</p>'
-                . '<p>Ticket type: ' . $p('tickettype') . '</p>'
-                . '<p>How obtained: ' . $p('origin') . '</p>',
+                . '<p>' . get_string('defaulttemplate:receiptfor', 'confcheckin', $p('fullname')) . '</p>'
+                . '<p>' . get_string('defaulttemplate:tickettype', 'confcheckin', $p('tickettype')) . '</p>'
+                . '<p>' . get_string('defaulttemplate:origin', 'confcheckin', $p('origin')) . '</p>',
             'certificate' => '<div style="text-align:center;">'
-                . '<h1>Certificate of Attendance</h1>'
-                . '<p>This certifies that</p>'
+                . '<h1>' . get_string('defaulttemplate:certificatetitle', 'confcheckin') . '</h1>'
+                . '<p>' . get_string('defaulttemplate:certifiesthat', 'confcheckin') . '</p>'
                 . '<h2>' . $p('fullname') . '</h2>'
-                . '<p>attended ' . $p('confcheckinname') . '</p>'
+                . '<p>' . get_string('defaulttemplate:attended', 'confcheckin', $p('confcheckinname')) . '</p>'
                 . '</div>',
         ];
 

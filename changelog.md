@@ -2,6 +2,63 @@
 
 ## [0.1.0] - Unreleased
 
+- Review fixes (2026-07-09, from the four-plugin FABLE.md review — see the
+  coordination repo):
+  - **Backup no longer loses `maxperuser`** — it was missing from the tickettype
+    backup element, so every restore silently converted "unlimited" (and any
+    custom cap) to the column default of 1; the first symptom would have been
+    attendees hitting `error:maxperuserexceeded` at next year's sales desk. The
+    restore step also treats a pre-feature backup's missing value as NULL
+    (unlimited), and the restore test asserts the round-trip.
+  - **Direct core_payment requests can no longer buy hidden ticket types** —
+    itemids are guessable sequential ints, and neither the checkout nor delivery
+    checked `visible` or course access. `get_payable()` now requires
+    `mod/confcheckin:purchase` in the module context (stopping the checkout
+    before money moves), and `issue_purchased_ticket()` re-checks `visible`
+    alongside its existing eligibility re-check (defence in depth, new test).
+  - **Privacy deletions no longer overstate `soldcount` forever** — the three
+    privacy delete paths removed tickets without `revoke_ticket()`'s decrement,
+    so a sold-out type whose buyers were GDPR-erased stayed "sold out" with no
+    recourse. A new `ticket_service::recount_soldcount()` recomputes from the
+    surviving rows (promo `timesused` is deliberately NOT recomputed — it's an
+    audit count, documented on the method).
+  - **Upgrading no longer retroactively caps existing ticket types at 1 per
+    user** — the `maxperuser` `add_field()` backfilled its default into every
+    pre-existing row, silently changing mid-sale policy. The step now resets
+    existing rows to unlimited, and a repair step (`2026070901`) un-caps types
+    created before the feature landed on sites that already ran the original
+    step.
+  - **Built-in badge/receipt/certificate fallback templates are translatable** —
+    their human-readable fragments were hard-coded English, so a Japanese site
+    that never customised templates handed out English certificates. Now lang
+    strings (en/ja).
+  - **Zero-decimal currencies reject fractional prices** — "¥500.50" with the
+    default JPY saved fine and then failed at every buyer's gateway checkout;
+    `tickettype_form` now validates against a fixed ISO 4217 zero-decimal list
+    (new `confcheckin_is_zero_decimal_currency()`, new error string, new tests).
+  - **Deleting a ticket type now cascades its promo codes** (they previously
+    dangled and failed at redemption with a misleading wrong-entity error), and
+    the confirmation dialog states the affected promo-code/ticket counts.
+  - **Performance**: the check-in report selects only id/name/email instead of
+    `u.*` for every enrolled user; the bulk certificate ZIP checks check-in
+    state in one query instead of one per ticket; `placeholder::track_name()`
+    request-caches tracks per instance instead of re-fetching per ticket;
+    `issue_granted_ticket()` no longer fires the "found more than one record"
+    developer warning for multi-ticket holders under `maxperuser > 1`.
+  - **Test backfill for the 2026-07-08 features** (they shipped untested):
+    maxperuser boundary (N allowed, N+1 rejected, NULL unlimited, per-user
+    isolation), form validation for maxperuser and zero-decimal prices,
+    `set_checkin()` idempotency in both directions, `get_tickets_by_user()`
+    grouping/decoration/instance-scoping, plus the restore and invisible-type
+    tests above.
+  - **Smaller items**: privacy metadata now declares `tickettypeid`/
+    `promocodeid` (both were exported but undeclared); the ticket `origin`
+    metadata string mentions `grant`; a deleted linked group is labelled
+    "(deleted group)" instead of the wrong-entity error string; the promo-code
+    input has a real (sr-only) label; the payment-account help icon renders in
+    the no-accounts branch; stale XMLDB VERSION comment and `lib.php` backup
+    docblock corrected; `record_checkin_test` validates its return structure
+    via `clean_returnvalue()`.
 - User request (2026-07-08): two changes to ticket types.
   1. **Default currency changed from USD to JPY** for new ticket types (both the
      `confcheckin_tickettype.currency` column default and `tickettype_form`'s own

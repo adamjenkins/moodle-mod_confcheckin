@@ -153,9 +153,38 @@ function xmldb_confcheckin_upgrade($oldversion) {
         $field = new xmldb_field('maxperuser', XMLDB_TYPE_INTEGER, '10', null, null, null, '1', 'capacity');
         if (!$dbman->field_exists($table, $field)) {
             $dbman->add_field($table, $field);
+            // Existing rows keep their pre-feature behaviour (no cap): add_field()
+            // backfills the column default ('1') into every existing row, which
+            // would silently change mid-sale policy -- the OPPOSITE choice from
+            // the currency default just above (FABLE.md review, 2026-07-09). The
+            // '1' default is for genuinely NEW ticket types only.
+            $DB->set_field_select('confcheckin_tickettype', 'maxperuser', null, '1 = 1');
         }
 
         upgrade_mod_savepoint(true, 2026070801, 'confcheckin');
+    }
+
+    if ($oldversion < 2026070901) {
+        // Repair for sites that ran the ORIGINAL 2026070801 step before the fix
+        // above existed (FABLE.md review, 2026-07-09): add_field() had backfilled
+        // maxperuser = 1 into every pre-existing ticket type, retroactively
+        // capping previously-unlimited types at 1 per user. A backfilled row is
+        // indistinguishable from an organiser genuinely choosing 1 in the single
+        // day the feature has existed, so this uses timecreated as the heuristic:
+        // only types CREATED BEFORE the feature landed (2026-07-08) are reset to
+        // unlimited -- a type created after it carries whatever the organiser
+        // actually saved. Runs only when upgrading THROUGH the broken step
+        // (fresh installs and post-fix upgraders have nothing backfilled).
+        $featurelanded = make_timestamp(2026, 7, 8, 0, 0, 0);
+        $DB->set_field_select(
+            'confcheckin_tickettype',
+            'maxperuser',
+            null,
+            'maxperuser = 1 AND timecreated < :featurelanded',
+            ['featurelanded' => $featurelanded]
+        );
+
+        upgrade_mod_savepoint(true, 2026070901, 'confcheckin');
     }
 
     return true;

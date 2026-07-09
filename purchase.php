@@ -165,8 +165,12 @@ echo $OUTPUT->heading(get_string('redeempromocode', 'confcheckin'), 4);
 echo html_writer::start_tag('form', ['method' => 'post', 'action' => $pageurl->out(false), 'class' => 'form-inline mb-4']);
 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'promo']);
 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+// A real (visually hidden) label, not just the placeholder: placeholders are
+// not labels (WCAG 3.3.2) -- same pattern scan.php's token input already uses.
+echo html_writer::label(get_string('promocode', 'confcheckin'), 'confcheckin-promocode', true, ['class' => 'sr-only']);
 echo html_writer::empty_tag('input', [
     'type'        => 'text',
+    'id'          => 'confcheckin-promocode',
     'name'        => 'code',
     'class'       => 'form-control mr-2',
     'placeholder' => get_string('promocode', 'confcheckin'),

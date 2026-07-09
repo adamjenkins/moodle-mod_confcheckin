@@ -106,6 +106,15 @@ class restore_confcheckin_activity_structure_step extends restore_activity_struc
         $data->validfrom = $data->validfrom !== null ? $this->apply_date_offset($data->validfrom) : null;
         $data->validto = $data->validto !== null ? $this->apply_date_offset($data->validto) : null;
 
+        // A backup made before maxperuser existed (or before it joined the backup
+        // field list -- FABLE.md review, 2026-07-09: it was omitted, so every
+        // restore silently converted "unlimited"/custom caps to the column
+        // default of 1) has no maxperuser element. Restore such rows as NULL
+        // (unlimited), the behaviour those ticket types actually had.
+        if (!property_exists($data, 'maxperuser') || $data->maxperuser === '') {
+            $data->maxperuser = null;
+        }
+
         $newitemid = $DB->insert_record('confcheckin_tickettype', $data);
         $this->set_mapping('confcheckin_tickettype', $oldid, $newitemid);
     }

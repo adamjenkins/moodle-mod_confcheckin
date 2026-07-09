@@ -55,9 +55,23 @@ if ($type === 'receipt') {
     // No receipt for free/promo tickets -- Phase 4.3 decision, see badge.php.
     $tickets = array_filter($tickets, static fn (\stdClass $ticket): bool => $ticket->origin === 'purchase');
 } else if ($type === 'certificate') {
+    // One query for the whole set, not one has_checked_in() query per ticket
+    // (FABLE.md review, 2026-07-09) -- this bulk ZIP export loops every ticket
+    // of the instance.
+    $checkedinticketids = [];
+    if ($tickets) {
+        [$insql, $inparams] = $DB->get_in_or_equal(array_keys($tickets));
+        $checkedinticketids = $DB->get_records_select_menu(
+            'confcheckin_checkin',
+            "ticketid $insql",
+            $inparams,
+            '',
+            'ticketid, id'
+        );
+    }
     $tickets = array_filter(
         $tickets,
-        static fn (\stdClass $ticket): bool => checkin_service::has_checked_in((int) $ticket->id)
+        static fn (\stdClass $ticket): bool => isset($checkedinticketids[(int) $ticket->id])
     );
 }
 if (!$tickets) {

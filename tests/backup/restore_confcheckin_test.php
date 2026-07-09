@@ -59,6 +59,7 @@ final class restore_confcheckin_test extends \restore_date_testcase {
             'price'        => '0.00',
             'currency'     => 'USD',
             'capacity'     => null,
+            'maxperuser'   => 4,
             'sortorder'    => 0,
             'visible'      => 1,
             'soldcount'    => 999, // Deliberately wrong -- must be recomputed, not carried over.
@@ -105,6 +106,10 @@ final class restore_confcheckin_test extends \restore_date_testcase {
             MUST_EXIST
         );
         $this->assertSame('Standard', $newtickettype->name);
+        // maxperuser must round-trip: it was missing from the backup field list, so
+        // every restore silently converted custom caps (and "unlimited") to the
+        // column default of 1 (FABLE.md review, 2026-07-09).
+        $this->assertSame(4, (int) $newtickettype->maxperuser);
         // The critical soldcount check: recomputed from the restored ticket, not the
         // deliberately-wrong 999 carried over from the backup.
         $this->assertSame(1, (int) $newtickettype->soldcount);

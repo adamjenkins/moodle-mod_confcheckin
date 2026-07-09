@@ -61,7 +61,7 @@ class backup_confcheckin_activity_structure_step extends backup_activity_structu
 
         $tickettypes = new backup_nested_element('tickettypes');
         $tickettype = new backup_nested_element('tickettype', ['id'], [
-            'name', 'price', 'currency', 'capacity', 'presenteronly', 'validfrom',
+            'name', 'price', 'currency', 'capacity', 'maxperuser', 'presenteronly', 'validfrom',
             'validto', 'sortorder', 'visible', 'soldcount', 'groupid', 'enrolid',
             'eligibilitygroupid', 'eligibilityenrolid', 'addtogroupid', 'timecreated', 'timemodified',
         ]);

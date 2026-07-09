@@ -89,6 +89,18 @@ class service_provider implements \core_payment\local\callback\service_provider 
             throw new \moodle_exception('error:nopaymentaccount', 'confcheckin');
         }
 
+        // The paying user must be able to reach the purchase page at all: itemids are
+        // guessable sequential ints and core_payment's gateway AJAX is otherwise open to
+        // any logged-in user, so without this any site user who learned an itemid could
+        // start (and complete) a checkout for a course they cannot even access
+        // (FABLE.md review, 2026-07-09). get_payable() runs as the paying user in every
+        // gateway flow, so this is the right chokepoint to stop the checkout before any
+        // money moves; issue_purchased_ticket()'s own visibility/eligibility re-checks
+        // below remain the defence-in-depth for delivery time.
+        $cm = get_coursemodule_from_instance('confcheckin', $confcheckin->id, $confcheckin->course, false, MUST_EXIST);
+        $context = \context_module::instance($cm->id);
+        require_capability('mod/confcheckin:purchase', $context);
+
         return new \core_payment\local\entities\payable(
             (float) $tickettype->price,
             $tickettype->currency,

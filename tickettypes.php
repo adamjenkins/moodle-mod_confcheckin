@@ -61,8 +61,18 @@ if ($deleteid) {
     if (!$confirm) {
         echo $OUTPUT->header();
         echo $OUTPUT->heading(format_string($confcheckin->name), 2);
+        // The confirmation states what the delete actually affects: issued tickets
+        // survive (unchanged behaviour), but the type's promo codes are now
+        // cascade-deleted with it -- they previously dangled and failed at
+        // redemption with a misleading wrong-entity error (FABLE.md review,
+        // 2026-07-09).
+        $confirmcontext = (object) [
+            'name'       => format_string($tickettype->name),
+            'tickets'    => $DB->count_records('confcheckin_ticket', ['tickettypeid' => $tickettype->id]),
+            'promocodes' => $DB->count_records('confcheckin_promocode', ['tickettypeid' => $tickettype->id]),
+        ];
         echo $OUTPUT->confirm(
-            get_string('confirmdeletetickettype', 'confcheckin', format_string($tickettype->name)),
+            get_string('confirmdeletetickettype', 'confcheckin', $confirmcontext),
             new moodle_url($pageurl, ['delete' => $deleteid, 'confirm' => 1, 'sesskey' => sesskey()]),
             $pageurl
         );
@@ -70,6 +80,10 @@ if ($deleteid) {
         exit;
     }
 
+    // Cascade the type's promo codes: a code whose ticket type is gone can never
+    // be redeemed again and previously failed with the wrong-entity
+    // error:invalidtickettype message (FABLE.md review, 2026-07-09).
+    $DB->delete_records('confcheckin_promocode', ['tickettypeid' => $deleteid, 'confcheckin' => $confcheckin->id]);
     $DB->delete_records('confcheckin_tickettype', ['id' => $deleteid, 'confcheckin' => $confcheckin->id]);
     redirect(
         $pageurl,
@@ -253,7 +267,7 @@ if ($tickettypes) {
             $autograntlabel = get_string(
                 'autograntgroupvalue',
                 'confcheckin',
-                $groupname !== null ? format_string($groupname) : get_string('error:invalidtickettype', 'confcheckin')
+                $groupname !== null ? format_string($groupname) : get_string('deletedgroup', 'confcheckin')
             );
         } else if (!empty($tickettype->enrolid)) {
             $enrolinstance = $DB->get_record('enrol', ['id' => $tickettype->enrolid]);
@@ -268,7 +282,7 @@ if ($tickettypes) {
             $eligibilitylabel = get_string(
                 'eligibilitygroupvalue',
                 'confcheckin',
-                $groupname !== null ? format_string($groupname) : get_string('error:invalidtickettype', 'confcheckin')
+                $groupname !== null ? format_string($groupname) : get_string('deletedgroup', 'confcheckin')
             );
         } else if (!empty($tickettype->eligibilityenrolid)) {
             $enrolinstance = $DB->get_record('enrol', ['id' => $tickettype->eligibilityenrolid]);
@@ -282,7 +296,7 @@ if ($tickettypes) {
             $groupname = $groupnames[$tickettype->addtogroupid]->name ?? null;
             $addtogrouplabel = $groupname !== null
                 ? format_string($groupname)
-                : get_string('error:invalidtickettype', 'confcheckin');
+                : get_string('deletedgroup', 'confcheckin');
         }
 
         $editurl = new moodle_url($pageurl, ['edit' => $tickettype->id]);

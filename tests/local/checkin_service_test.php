@@ -193,4 +193,74 @@ final class checkin_service_test extends advanced_testcase {
 
         $this->assertTrue(checkin_service::has_checked_in((int) $ticket->id));
     }
+
+    /**
+     * set_checkin() (the manual report toggle, 2026-07-08 -- shipped untested,
+     * FABLE.md review 2026-07-09) is idempotent in BOTH directions: setting an
+     * already-checked-in ticket checked-in creates no second row, clearing an
+     * already-clear ticket is a no-op, and a full round trip lands back where
+     * it started.
+     */
+    public function test_set_checkin_idempotent_both_directions(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid);
+        $attendee = $this->getDataGenerator()->create_user();
+        $ticket = $this->create_ticket($confcheckinid, $tickettypeid, (int) $attendee->id);
+        $staff = $this->getDataGenerator()->create_user();
+
+        // Clearing while already clear: no-op.
+        checkin_service::set_checkin((int) $ticket->id, false, (int) $staff->id);
+        $this->assertSame(0, $DB->count_records('confcheckin_checkin', ['ticketid' => $ticket->id]));
+
+        checkin_service::set_checkin((int) $ticket->id, true, (int) $staff->id);
+        $this->assertTrue(checkin_service::has_checked_in((int) $ticket->id));
+        $this->assertSame(1, $DB->count_records('confcheckin_checkin', ['ticketid' => $ticket->id]));
+
+        // Setting while already set: still exactly one row.
+        checkin_service::set_checkin((int) $ticket->id, true, (int) $staff->id);
+        $this->assertSame(1, $DB->count_records('confcheckin_checkin', ['ticketid' => $ticket->id]));
+
+        checkin_service::set_checkin((int) $ticket->id, false, (int) $staff->id);
+        $this->assertFalse(checkin_service::has_checked_in((int) $ticket->id));
+        $this->assertSame(0, $DB->count_records('confcheckin_checkin', ['ticketid' => $ticket->id]));
+    }
+
+    /**
+     * get_tickets_by_user() (the check-in report's dataset, 2026-07-08 --
+     * shipped untested) groups an instance's tickets by userid, decorating each
+     * with its type name and check-in time, and excludes other instances.
+     */
+    public function test_get_tickets_by_user_groups_and_decorates(): void {
+        $this->resetAfterTest();
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid);
+        $otherinstanceid = $this->create_confcheckin();
+        $othertypeid = $this->create_tickettype($otherinstanceid);
+
+        $attendee = $this->getDataGenerator()->create_user();
+        $staff = $this->getDataGenerator()->create_user();
+        $ticket1 = $this->create_ticket($confcheckinid, $tickettypeid, (int) $attendee->id);
+        $ticket2 = $this->create_ticket($confcheckinid, $tickettypeid, (int) $attendee->id);
+        $this->create_ticket($otherinstanceid, $othertypeid, (int) $attendee->id);
+
+        checkin_service::record_checkin($confcheckinid, $ticket1->qrtoken, (int) $staff->id);
+
+        $byuser = checkin_service::get_tickets_by_user($confcheckinid);
+
+        $this->assertArrayHasKey((int) $attendee->id, $byuser);
+        $tickets = $byuser[(int) $attendee->id];
+        // Both of THIS instance's tickets, and only those.
+        $this->assertCount(2, $tickets);
+        $byid = [];
+        foreach ($tickets as $ticket) {
+            $byid[(int) $ticket->id] = $ticket;
+            $this->assertSame('Test ticket', $ticket->tickettypename);
+        }
+        $this->assertNotNull($byid[(int) $ticket1->id]->checkedintime);
+        $this->assertNull($byid[(int) $ticket2->id]->checkedintime);
+    }
 }

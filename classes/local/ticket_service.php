@@ -228,6 +228,17 @@ class ticket_service {
         try {
             $tickettype = self::lock_tickettype($confcheckinid, $tickettypeid);
 
+            // Visibility is part of the same defence-in-depth re-check as
+            // eligibility below: purchase.php merely HIDES an invisible type from
+            // the list, but core_payment itemids are guessable sequential ints, so
+            // without this a direct gateway request could buy a hidden ("Staff",
+            // draft next-year early-bird) paid type never offered to the buyer
+            // (FABLE.md review, 2026-07-09). get_payable() additionally blocks the
+            // checkout from even starting for users without mod/confcheckin:purchase.
+            if (empty($tickettype->visible)) {
+                throw new \moodle_exception('error:invalidtickettype', 'confcheckin');
+            }
+
             self::require_eligible($confcheckinid, $tickettype, $userid);
             self::require_within_maxperuser($tickettype, $userid);
 
@@ -279,9 +290,21 @@ class ticket_service {
     public static function issue_granted_ticket(int $confcheckinid, int $tickettypeid, int $userid): \stdClass {
         global $DB;
 
-        $existing = $DB->get_record('confcheckin_ticket', ['tickettypeid' => $tickettypeid, 'userid' => $userid]);
+        // Capped fetch, not get_record(): with maxperuser > 1 (or unlimited) a user
+        // can legitimately hold several tickets of one type, and get_record() on a
+        // non-unique pair fires Moodle's "found more than one record" developer
+        // warning on every observer event/sync for such users (FABLE.md review,
+        // 2026-07-09). This method only needs "does one exist" -- any one will do.
+        $existing = $DB->get_records(
+            'confcheckin_ticket',
+            ['tickettypeid' => $tickettypeid, 'userid' => $userid],
+            'id ASC',
+            '*',
+            0,
+            1
+        );
         if ($existing) {
-            return $existing;
+            return reset($existing);
         }
 
         $transaction = $DB->start_delegated_transaction();
@@ -290,10 +313,18 @@ class ticket_service {
 
             // Re-check for a race: another request may have inserted a ticket for
             // this user/type between the unlocked check above and this locked one.
-            $racedticket = $DB->get_record('confcheckin_ticket', ['tickettypeid' => $tickettypeid, 'userid' => $userid]);
-            if ($racedticket) {
+            // Same capped fetch as above.
+            $racedtickets = $DB->get_records(
+                'confcheckin_ticket',
+                ['tickettypeid' => $tickettypeid, 'userid' => $userid],
+                'id ASC',
+                '*',
+                0,
+                1
+            );
+            if ($racedtickets) {
                 $transaction->allow_commit();
-                return $racedticket;
+                return reset($racedtickets);
             }
 
             self::reserve_capacity_locked($tickettype);
@@ -360,6 +391,38 @@ class ticket_service {
             $transaction->allow_commit();
         } catch (\Throwable $e) {
             $transaction->rollback($e);
+        }
+    }
+
+    /**
+     * Recomputes every ticket type's soldcount for an instance from the actual
+     * confcheckin_ticket rows -- the same recovery backup/restore's
+     * after_restore() performs. Needed by any deletion path that removes ticket
+     * rows WITHOUT going through revoke_ticket()'s per-ticket decrement: the
+     * privacy provider's three delete methods were exactly such a path, leaving
+     * soldcount permanently overstated (a sold-out type whose buyers were
+     * GDPR-erased stayed "sold out" forever with no UI recourse -- FABLE.md
+     * review, 2026-07-09).
+     *
+     * Deliberately does NOT touch confcheckin_promocode.timesused: a promo
+     * code's use count is treated as an audit record of redemptions that
+     * happened (same posture as the provider's documented scannedby retention),
+     * not a live capacity counter -- reducing it would let a capped code be
+     * redeemed again because a past redeemer was erased.
+     *
+     * @param int $confcheckinid The confcheckin instance id
+     * @return void
+     */
+    public static function recount_soldcount(int $confcheckinid): void {
+        global $DB;
+
+        foreach ($DB->get_records('confcheckin_tickettype', ['confcheckin' => $confcheckinid], '', 'id') as $type) {
+            $DB->set_field(
+                'confcheckin_tickettype',
+                'soldcount',
+                $DB->count_records('confcheckin_ticket', ['tickettypeid' => $type->id]),
+                ['id' => $type->id]
+            );
         }
     }
 

@@ -25,12 +25,6 @@
 /**
  * Returns the features this module supports.
  *
- * FEATURE_BACKUP_MOODLE2 is deliberately not claimed yet: no backup/restore
- * steps have been written for this plugin's tables (which, once Phases
- * 4.3-4.5 land, will include payment/ticket/check-in records with real
- * personal-data implications for backup/restore). Add the backup/restore
- * steplibs before flipping this to true.
- *
  * @param string $feature FEATURE_xx constant for requested feature
  * @return mixed True if module supports feature, false if not, null if doesn't know
  */
@@ -187,6 +181,25 @@ function confcheckin_get_currency_options(): array {
  */
 function confcheckin_is_valid_currency(string $code): bool {
     return get_string_manager()->string_exists($code, 'core_currencies');
+}
+
+/**
+ * Whether a currency has zero decimal places under ISO 4217 -- payment gateways
+ * (PayPal and most others) REJECT fractional amounts in these at checkout time,
+ * so a ticket price like "500.50 JPY" must be refused at form-validation time
+ * instead of failing opaquely for every buyer (FABLE.md review, 2026-07-09).
+ * The list mirrors the zero-decimal set gateway APIs publish (e.g. Stripe's);
+ * a fixed constant rather than intl/NumberFormatter, so validation does not
+ * depend on the PHP intl extension being present.
+ *
+ * @param string $code A currency code, e.g. 'JPY'
+ * @return bool
+ */
+function confcheckin_is_zero_decimal_currency(string $code): bool {
+    return in_array(strtoupper($code), [
+        'BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA',
+        'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF',
+    ], true);
 }
 
 /**

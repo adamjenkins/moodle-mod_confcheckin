@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'mod_confcheckin';
-$plugin->version   = 2026070801; // The current module version (Date: YYYYMMDDXX).
+$plugin->version   = 2026070901; // The current module version (Date: YYYYMMDDXX).
 $plugin->requires  = 2026042000; // Moodle 5.2.
 $plugin->maturity  = MATURITY_ALPHA;
 $plugin->release   = '0.1.0';

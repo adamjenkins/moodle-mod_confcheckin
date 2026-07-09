@@ -107,6 +107,48 @@ final class tickettype_form_test extends advanced_testcase {
         $this->assertArrayNotHasKey('price', $errors);
     }
 
+    /**
+     * A zero-decimal currency (JPY -- this plugin's default) rejects fractional
+     * prices: gateways refuse them at checkout time, so the form must catch
+     * "¥500.50" here instead of every buyer failing opaquely (FABLE.md review,
+     * 2026-07-09). Whole amounts, and fractional amounts in decimal currencies,
+     * still pass.
+     */
+    public function test_zero_decimal_currency_rejects_fractional_price(): void {
+        $this->resetAfterTest();
+
+        $form = new tickettype_form(null, self::FORM_CUSTOMDATA);
+
+        $errors = $form->validation($this->base_data(['price' => '500.50', 'currency' => 'JPY']), []);
+        $this->assertArrayHasKey('price', $errors);
+
+        $errors = $form->validation($this->base_data(['price' => '500', 'currency' => 'JPY']), []);
+        $this->assertArrayNotHasKey('price', $errors);
+
+        $errors = $form->validation($this->base_data(['price' => '500.50', 'currency' => 'USD']), []);
+        $this->assertArrayNotHasKey('price', $errors);
+    }
+
+    /**
+     * maxperuser accepts blank (unlimited) and positive whole numbers, rejecting
+     * zero, negatives and non-numeric input (FABLE.md review, 2026-07-09 -- the
+     * field shipped without a validation test).
+     */
+    public function test_maxperuser_validation(): void {
+        $this->resetAfterTest();
+
+        $form = new tickettype_form(null, self::FORM_CUSTOMDATA);
+
+        foreach (['' => false, '1' => false, '4' => false, '0' => true, '-2' => true, 'lots' => true] as $value => $iserror) {
+            $errors = $form->validation($this->base_data(['maxperuser' => (string) $value]), []);
+            if ($iserror) {
+                $this->assertArrayHasKey('maxperuser', $errors, "'$value' should be rejected");
+            } else {
+                $this->assertArrayNotHasKey('maxperuser', $errors, "'$value' should be accepted");
+            }
+        }
+    }
+
     public function test_invalid_currency_rejected(): void {
         $this->resetAfterTest();
 

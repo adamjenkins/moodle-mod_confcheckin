@@ -113,7 +113,14 @@ class mod_confcheckin_mod_form extends moodleform_mod {
             $mform->addElement('hidden', 'paymentaccountid', 0);
             $mform->setType('paymentaccountid', PARAM_INT);
         }
-        $mform->addHelpButton('paymentaccountid', 'paymentaccountid', 'confcheckin');
+        // The help icon must attach to whichever element is actually VISIBLE in this
+        // branch -- attached to the hidden 'paymentaccountid' it silently never
+        // rendered in the no-accounts case (FABLE.md review, 2026-07-09).
+        if ($accounts) {
+            $mform->addHelpButton('paymentaccountid', 'paymentaccountid', 'confcheckin');
+        } else {
+            $mform->addHelpButton('paymentaccountid_text', 'paymentaccountid', 'confcheckin');
+        }
 
         // Standard module elements (visibility, groups, etc.).
         $this->standard_coursemodule_elements();

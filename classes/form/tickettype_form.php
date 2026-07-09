@@ -185,12 +185,23 @@ class tickettype_form extends \moodleform {
             $errors['name'] = get_string('required');
         }
 
-        if (confcheckin_parse_price((string) ($data['price'] ?? '')) === false) {
+        $parsedprice = confcheckin_parse_price((string) ($data['price'] ?? ''));
+        if ($parsedprice === false) {
             $errors['price'] = get_string('error:invalidprice', 'confcheckin');
         }
 
         if (!confcheckin_is_valid_currency((string) ($data['currency'] ?? ''))) {
             $errors['currency'] = get_string('error:invalidcurrency', 'confcheckin');
+        } else if (
+            $parsedprice !== false
+                && confcheckin_is_zero_decimal_currency((string) $data['currency'])
+                && floor($parsedprice) != $parsedprice
+        ) {
+            // ISO 4217 gives JPY (this plugin's default currency), KRW, VND etc. zero
+            // decimal places, and real gateways REJECT fractional amounts in them at
+            // checkout time -- so "¥500.50" would save fine here and then fail for
+            // every buyer with an opaque gateway error (FABLE.md review, 2026-07-09).
+            $errors['price'] = get_string('error:fractionalzerodecimal', 'confcheckin');
         }
 
         $capacity = trim((string) ($data['capacity'] ?? ''));

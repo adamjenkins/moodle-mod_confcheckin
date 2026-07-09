@@ -83,7 +83,10 @@ final class record_checkin_test extends advanced_testcase {
         $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
         $this->setUser($teacher);
 
-        $result = record_checkin::execute($cmid, $ticket->qrtoken);
+        $result = \core_external\external_api::clean_returnvalue(
+            record_checkin::execute_returns(),
+            record_checkin::execute($cmid, $ticket->qrtoken)
+        );
 
         $this->assertSame((int) $ticket->id, $result['ticketid']);
         $this->assertFalse($result['alreadycheckedin']);

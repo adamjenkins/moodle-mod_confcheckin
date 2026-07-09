@@ -276,12 +276,26 @@ class placeholder {
             return '';
         }
 
-        $cm = get_coursemodule_from_instance('confsubmissions', $submission->confsubmissions, 0, false, IGNORE_MISSING);
-        if (!$cm) {
-            return '';
+        // Request-cached per confsubmissions instance, same MODE_REQUEST pattern
+        // as get_accepted_with_speakers()/get_presentationinfo_format() above --
+        // the bulk badge/certificate ZIP previously re-ran the cm lookup AND
+        // get_tracks() per submission per ticket (FABLE.md review, 2026-07-09).
+        $cache = \cache::make_from_params(\cache_store::MODE_REQUEST, 'mod_confcheckin', 'tracksbyinstance');
+        $tracks = $cache->get((int) $submission->confsubmissions);
+        if ($tracks === false) {
+            $tracks = [];
+            $cm = get_coursemodule_from_instance(
+                'confsubmissions',
+                $submission->confsubmissions,
+                0,
+                false,
+                IGNORE_MISSING
+            );
+            if ($cm) {
+                $tracks = \mod_confsubmissions\api::get_tracks($cm->id);
+            }
+            $cache->set((int) $submission->confsubmissions, $tracks);
         }
-
-        $tracks = \mod_confsubmissions\api::get_tracks($cm->id);
 
         return isset($tracks[$submission->trackid]) ? format_string($tracks[$submission->trackid]->name) : '';
     }

@@ -718,4 +718,113 @@ final class ticket_service_test extends advanced_testcase {
 
         $this->assertSame('free', $ticket->origin);
     }
+
+    /**
+     * The per-user cap boundary (FABLE.md review, 2026-07-09 -- the feature
+     * shipped without any test): N tickets are allowed, the N+1th is rejected,
+     * and NULL means unlimited.
+     */
+    public function test_maxperuser_boundary(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid, ['maxperuser' => 2]);
+        $user = $this->getDataGenerator()->create_user();
+
+        ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+        ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+
+        try {
+            ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+            $this->fail('The third ticket must exceed maxperuser = 2');
+        } catch (\moodle_exception $e) {
+            $this->assertStringContainsString(
+                get_string('error:maxperuserexceeded', 'confcheckin'),
+                $e->getMessage()
+            );
+        }
+
+        // Another user is unaffected by the first user's cap.
+        $user2 = $this->getDataGenerator()->create_user();
+        $ticket = ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $user2->id);
+        $this->assertNotEmpty($ticket->id);
+
+        // NULL means unlimited.
+        $unlimitedtypeid = $this->create_tickettype($confcheckinid, ['maxperuser' => null, 'name' => 'Unlimited']);
+        for ($i = 0; $i < 3; $i++) {
+            ticket_service::issue_free_ticket($confcheckinid, $unlimitedtypeid, (int) $user->id);
+        }
+        $this->assertSame(3, $DB->count_records('confcheckin_ticket', [
+            'tickettypeid' => $unlimitedtypeid,
+            'userid'       => $user->id,
+        ]));
+    }
+
+    /**
+     * issue_purchased_ticket() rejects an INVISIBLE ticket type: purchase.php
+     * merely hides one from the list, but core_payment itemids are guessable,
+     * so delivery itself must refuse (FABLE.md review, 2026-07-09).
+     */
+    public function test_issue_purchased_ticket_rejects_invisible_type(): void {
+        $this->resetAfterTest();
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid, ['price' => '10.00', 'visible' => 0]);
+        $user = $this->getDataGenerator()->create_user();
+
+        $this->expectException(\moodle_exception::class);
+        ticket_service::issue_purchased_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+    }
+
+    /**
+     * recount_soldcount() recomputes each type's soldcount from the actual
+     * ticket rows -- the recovery the privacy delete paths rely on after
+     * removing tickets without revoke_ticket()'s per-ticket decrement.
+     */
+    public function test_recount_soldcount(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid, ['maxperuser' => null]);
+        $user1 = $this->getDataGenerator()->create_user();
+        $user2 = $this->getDataGenerator()->create_user();
+        ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $user1->id);
+        ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $user2->id);
+        $this->assertSame(2, (int) $DB->get_field('confcheckin_tickettype', 'soldcount', ['id' => $tickettypeid]));
+
+        // Simulate a privacy-style raw deletion that bypasses revoke_ticket().
+        $DB->delete_records('confcheckin_ticket', ['tickettypeid' => $tickettypeid, 'userid' => $user1->id]);
+        ticket_service::recount_soldcount($confcheckinid);
+
+        $this->assertSame(1, (int) $DB->get_field('confcheckin_tickettype', 'soldcount', ['id' => $tickettypeid]));
+    }
+
+    /**
+     * issue_granted_ticket() stays quiet (no "found more than one record"
+     * developer warning) and idempotent when the user already holds SEVERAL
+     * tickets of the type -- legitimate under maxperuser > 1 (FABLE.md review,
+     * 2026-07-09: the old get_record() lookup warned on every observer sync).
+     */
+    public function test_issue_granted_ticket_tolerates_multiple_existing_tickets(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid, ['maxperuser' => null]);
+        $user = $this->getDataGenerator()->create_user();
+        ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+        ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+
+        $ticket = ticket_service::issue_granted_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+
+        // Returned one of the existing tickets; issued nothing new.
+        $this->assertSame(2, $DB->count_records('confcheckin_ticket', [
+            'tickettypeid' => $tickettypeid,
+            'userid'       => $user->id,
+        ]));
+        $this->assertSame((int) $user->id, (int) $ticket->userid);
+        $this->assertDebuggingNotCalled();
+    }
 }

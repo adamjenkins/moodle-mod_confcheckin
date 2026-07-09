@@ -67,18 +67,44 @@ final class service_provider_test extends advanced_testcase {
 
     /**
      * get_payable() returns the ticket type's own price/currency and the instance's
-     * configured payment account id.
+     * configured payment account id -- for a user who can actually purchase.
+     * Since the 2026-07-09 review fix, get_payable() runs the
+     * mod/confcheckin:purchase check itself (it executes as the paying user in
+     * every gateway flow), so the test runs as an enrolled student.
      */
     public function test_get_payable(): void {
         $this->resetAfterTest();
 
-        [, $tickettypeid, $account] = $this->create_fixture();
+        [$confcheckin, $tickettypeid, $account] = $this->create_fixture();
+
+        $course = get_course($confcheckin->course);
+        $buyer = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $this->setUser($buyer);
 
         $payable = service_provider::get_payable('tickettype', $tickettypeid);
 
         $this->assertEqualsWithDelta(99.50, $payable->get_amount(), 0.001);
         $this->assertSame('USD', $payable->get_currency());
         $this->assertSame($account->get('id'), $payable->get_account_id());
+    }
+
+    /**
+     * get_payable() refuses a user without mod/confcheckin:purchase -- itemids
+     * are guessable sequential ints, so without this any logged-in site user
+     * could start (and complete) a checkout for a course they cannot access
+     * (FABLE.md review, 2026-07-09).
+     */
+    public function test_get_payable_requires_purchase_capability(): void {
+        $this->resetAfterTest();
+
+        [, $tickettypeid] = $this->create_fixture();
+
+        // Logged in, but not enrolled anywhere near the course.
+        $stranger = $this->getDataGenerator()->create_user();
+        $this->setUser($stranger);
+
+        $this->expectException(\required_capability_exception::class);
+        service_provider::get_payable('tickettype', $tickettypeid);
     }
 
     /**
