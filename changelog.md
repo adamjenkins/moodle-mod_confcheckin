@@ -2,6 +2,39 @@
 
 ## [0.1.0] - Unreleased
 
+- Camera-only QR scanner rework (2026-07-09) — `scan.php` no longer has a
+  manual text-entry field or "Check in" button (and, with it, no more
+  USB/Bluetooth barcode-scanner-gun support): the camera now starts
+  automatically and is the only way to check an attendee in.
+  - **Cross-browser decoding**: the native `BarcodeDetector` API only works
+    in Chromium-based browsers, which is why Safari/iPhone and Firefox never
+    showed a working camera option before. Vendored **jsQR**
+    (`thirdparty/jsQR/`, Apache-2.0) as a pure-JS fallback decoder for every
+    browser without `BarcodeDetector` support — its distributed UMD wrapper
+    needed a small, documented local change (see
+    `thirdparty/jsQR/readme_moodle.txt`) so it sets a global instead of
+    silently registering as an anonymous AMD module under Moodle's RequireJS.
+  - **More robust camera acquisition**: `getUserMedia` now requests an
+    "ideal" (not exact) environment-facing camera first, falling back to no
+    constraint at all if that fails — believed to fix desktop webcams that
+    previously never activated (a bare/exact `facingMode` constraint can
+    throw `OverconstrainedError` on hardware with no such metadata).
+  - **Camera selection**: when more than one camera is available,
+    `enumerateDevices()` populates a dropdown so the operator can switch
+    (front/back on a phone, or between multiple webcams on a desktop).
+  - **Specific error messages** for permission denied, no camera found,
+    insecure (non-HTTPS) context, and unsupported browser — there is no
+    fallback UI left to point the operator at otherwise.
+  - **Privacy**: the scanned attendee's name in the result banner, and each
+    entry in the running scan log, now auto-clears 3 seconds after appearing
+    instead of persisting on screen indefinitely.
+  - `playsinline`/`muted`/`autoplay` added to the `<video>` element,
+    addressing a known iOS Safari requirement for inline (non-fullscreen)
+    custom camera UIs.
+  - Not yet verified: camera-permission delegation inside the Moodle app's
+    embedded `<core-iframe>` view of this page (see `db/mobile.php`) — no
+    fallback exists there any more either if that turns out not to work;
+    flagged for a follow-up check on a real device.
 - Review fixes (2026-07-09, from the four-plugin FABLE.md review — see the
   coordination repo):
   - **Backup no longer loses `maxperuser`** — it was missing from the tickettype

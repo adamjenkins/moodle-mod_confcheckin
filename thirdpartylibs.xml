@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<libraries>
+  <library>
+    <location>thirdparty/jsQR/jsQR.js</location>
+    <name>jsQR</name>
+    <description>A pure JavaScript QR code reading library used as the camera-scan decode fallback for browsers without the native BarcodeDetector API.</description>
+    <version>1.4.0</version>
+    <license>Apache-2.0</license>
+    <repository>https://github.com/cozmo/jsQR</repository>
+    <copyrights>
+      <copyright>2017, Cosmo Wolfe</copyright>
+    </copyrights>
+    <customised>true</customised>
+  </library>
+</libraries>

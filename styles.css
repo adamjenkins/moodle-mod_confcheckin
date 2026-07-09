@@ -23,14 +23,26 @@
     max-width: 30rem;
 }
 
-.mod_confcheckin-scanner-input {
-    font-size: 1.25rem;
-}
-
 .mod_confcheckin-scanner-mutelabel {
     display: block;
     font-weight: normal;
     cursor: pointer;
+}
+
+.mod_confcheckin-scanner-cameraselectlabel {
+    display: block;
+    font-weight: normal;
+    margin-top: 0.5rem;
+}
+
+.mod_confcheckin-scanner-cameraselect {
+    display: block;
+    margin-top: 0.25rem;
+    max-width: 20rem;
+}
+
+.mod_confcheckin-scanner-error {
+    margin-top: 0.5rem;
 }
 
 /*

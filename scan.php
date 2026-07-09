@@ -18,21 +18,16 @@
  * QR check-in scanner for mod_confcheckin (Phase 4.5), gated on
  * mod/confcheckin:scancheckin.
  *
- * Two input paths, both feeding the same amd/src/scanner.js submit handler:
- * - A plain, always-available text field, auto-focused and auto-submitting on
- *   Enter -- this is the reliable baseline: a USB/Bluetooth barcode scanner (the
- *   common piece of hardware at a real conference check-in desk) behaves exactly
- *   like a keyboard typing the decoded text followed by Enter, so this needs no
- *   camera API or any third-party JS library at all, and works identically inside
- *   the Moodle app's embedded web view (see db/mobile.php) as in a desktop
- *   browser.
- * - An optional camera-based scanner, progressively enhanced via the browser's
- *   native BarcodeDetector API (feature-detected; not vendoring a third-party JS
- *   QR-decoding library, since none ships in Moodle core and this project has no
- *   way to security/license-review one in this environment). Support varies by
- *   browser/web view (notably: no Safari/WebKit support as of this writing), so
- *   this is a convenience on top of the always-working text-field path, never a
- *   requirement.
+ * Camera-only (2026-07-09 rework): there is no manual/typed input path and no
+ * USB/Bluetooth barcode-scanner-gun support any more -- the camera starts
+ * automatically on page load and is the only way to record a check-in here.
+ * amd/src/scanner.js prefers the browser's native BarcodeDetector API where
+ * available (Chromium-based browsers), and falls back to the vendored jsQR
+ * pure-JS decoder (thirdparty/jsQR/, loaded below) everywhere else -- notably
+ * Safari/iPhone and Firefox, neither of which implement BarcodeDetector. When
+ * more than one camera is available, a device-select control lets the operator
+ * switch between them. See amd/src/scanner.js's own docblock for the full
+ * acquisition/decode/error-handling design.
  *
  * @package    mod_confcheckin
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
@@ -56,6 +51,11 @@ $PAGE->set_title(format_string($confcheckin->name) . ': ' . get_string('scanchec
 $PAGE->set_heading(format_string($course->fullname));
 $PAGE->set_context($context);
 
+// Plain script tag, not an AMD module: jsQR is a vendored third-party global,
+// not something written for/shimmed into Moodle's RequireJS -- see
+// thirdparty/jsQR/readme_moodle.txt for why its UMD wrapper needed a small,
+// documented local change to make this work.
+$PAGE->requires->js(new moodle_url('/mod/confcheckin/thirdparty/jsQR/jsQR.js'), true);
 $PAGE->requires->js_call_amd('mod_confcheckin/scanner', 'init', [$cm->id]);
 
 echo $OUTPUT->header();
@@ -64,44 +64,38 @@ echo $OUTPUT->heading(get_string('scancheckin', 'confcheckin'), 3);
 
 echo html_writer::tag('p', get_string('scancheckin_help', 'confcheckin'));
 
-echo html_writer::start_div('mod_confcheckin-scanner', ['id' => 'mod_confcheckin-scanner-root']);
-
-echo html_writer::start_tag('form', ['class' => 'mod_confcheckin-scanner-form']);
-echo html_writer::label(get_string('scanqrtoken', 'confcheckin'), 'mod_confcheckin-scanner-input');
-echo html_writer::empty_tag('input', [
-    'type'        => 'text',
-    'id'          => 'mod_confcheckin-scanner-input',
-    'name'        => 'qrtoken',
-    'class'       => 'form-control mod_confcheckin-scanner-input',
-    'autocomplete' => 'off',
-    'autofocus'   => 'autofocus',
-    'placeholder' => get_string('scanqrtoken', 'confcheckin'),
-]);
-echo html_writer::empty_tag('input', [
-    'type'  => 'submit',
-    'class' => 'btn btn-primary mt-2',
-    'value' => get_string('scanqrtokensubmit', 'confcheckin'),
-]);
-echo html_writer::end_tag('form');
-
 echo html_writer::tag(
-    'button',
-    get_string('scanwithcamera', 'confcheckin'),
-    ['type' => 'button', 'class' => 'btn btn-secondary mt-2 mod_confcheckin-scanner-cameratoggle', 'hidden' => 'hidden']
+    'noscript',
+    html_writer::div(get_string('scannoscript', 'confcheckin'), 'alert alert-warning')
 );
 
+echo html_writer::start_div('mod_confcheckin-scanner', ['id' => 'mod_confcheckin-scanner-root']);
+
 // Mutes the success beep only (user request, 2026-07-08); the visual flash/checkmark
-// below are silent regardless, so nothing else needs to respect this. Not gated behind
-// the camera-support check above: the beep also plays for the always-available text-
-// field/hardware-barcode-scanner path, so this toggle is relevant even where the
-// camera button itself never appears.
-echo html_writer::start_tag('label', ['class' => 'mod_confcheckin-scanner-mutelabel mt-2']);
+// below are silent regardless, so nothing else needs to respect this.
+echo html_writer::start_tag('label', ['class' => 'mod_confcheckin-scanner-mutelabel']);
 echo html_writer::empty_tag('input', [
     'type'  => 'checkbox',
     'class' => 'mod_confcheckin-scanner-mute',
 ]);
 echo ' ' . get_string('mutescansound', 'confcheckin');
 echo html_writer::end_tag('label');
+
+// Only revealed by JS (amd/src/scanner.js) once enumerateDevices() finds more
+// than one camera -- kept out of the way entirely on the common single-camera
+// phone case.
+echo html_writer::start_tag('label', ['class' => 'mod_confcheckin-scanner-cameraselectlabel', 'hidden' => 'hidden']);
+echo get_string('selectcamera', 'confcheckin');
+echo html_writer::start_tag('select', ['class' => 'form-control mod_confcheckin-scanner-cameraselect']);
+echo html_writer::end_tag('select');
+echo html_writer::end_tag('label');
+
+// A page-level blocking error state (permission denied, no camera, insecure
+// context, unsupported browser, or no decoder available at all) -- there is no
+// fallback UI left to degrade to, so this needs to be obvious rather than
+// treated like a routine scan-outcome message (contrast with the polite-live
+// result banner below).
+echo html_writer::div('', 'mod_confcheckin-scanner-error alert alert-danger', ['hidden' => 'hidden', 'role' => 'alert']);
 
 // A wrapper around <video> (user request, 2026-07-08): gives the border-flash-green
 // success cue somewhere to paint (a border directly on <video> would be clipped/replaced
@@ -110,7 +104,18 @@ echo html_writer::end_tag('label');
 // alongside the video itself (see amd/src/scanner.js's start/stopCameraScanning()) so
 // nothing -- not even an empty bordered box -- shows before the camera is actually on.
 echo html_writer::start_div('mod_confcheckin-scanner-videowrap', ['hidden' => 'hidden']);
-echo html_writer::empty_tag('video', ['class' => 'mod_confcheckin-scanner-video', 'hidden' => 'hidden']);
+// playsinline/muted/autoplay as literal attributes (not just JS properties set
+// later): iOS Safari is known to require playsinline present in the initial
+// HTML for a custom camera UI to render inline instead of going fullscreen/
+// failing outright.
+echo html_writer::empty_tag('video', [
+    'class'       => 'mod_confcheckin-scanner-video',
+    'hidden'      => 'hidden',
+    'playsinline' => 'playsinline',
+    'muted'       => 'muted',
+    'autoplay'    => 'autoplay',
+    'aria-label'  => get_string('scanwithcamera', 'confcheckin'),
+]);
 echo html_writer::tag('i', '', [
     'class'       => 'mod_confcheckin-scanner-checkmark fa fa-check-circle',
     'aria-hidden' => 'true',
