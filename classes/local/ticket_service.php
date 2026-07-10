@@ -582,6 +582,32 @@ class ticket_service {
     }
 
     /**
+     * Whether a ticket type is currently within its acquisition (availability)
+     * window -- validfrom/validto now mean "when this ticket type may be
+     * purchased/claimed", not ticket validity/admission (user request,
+     * 2026-07-10; useful for early-bird-style campaigns). Both null (the common
+     * case) means no restriction. Used both for real enforcement
+     * (require_eligible() below) and for display (purchase.php deciding whether
+     * to show/disable the acquisition button and what message to show).
+     *
+     * @param \stdClass $tickettype A confcheckin_tickettype record
+     * @param int|null $now Unix timestamp to check against; null means the real current time (a fixed value is used by tests)
+     * @return bool
+     */
+    public static function is_within_availability_window(\stdClass $tickettype, ?int $now = null): bool {
+        $now = $now ?? time();
+
+        if (!empty($tickettype->validfrom) && $now < (int) $tickettype->validfrom) {
+            return false;
+        }
+        if (!empty($tickettype->validto) && $now > (int) $tickettype->validto) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Locks a confcheckin_tickettype row (see this class's docblock) and re-verifies it
      * belongs to the given confcheckin instance.
      *
@@ -655,6 +681,16 @@ class ticket_service {
 
         if (!eligibility::is_eligible_for_tickettype($userid, $tickettype, $confprogramcmid)) {
             throw new \moodle_exception('error:noteligible', 'confcheckin');
+        }
+
+        // Availability window (user request, 2026-07-10): validfrom/validto are the
+        // acquisition window, enforced here the same way as the eligibility check
+        // above. Deliberately NOT checked in redeem_promocode() -- same precedent as
+        // presenteronly/eligibilitygroupid above: a promo code redemption bypasses
+        // eligibility checks entirely, since an organiser handing someone a code is
+        // itself the authorisation.
+        if (!self::is_within_availability_window($tickettype)) {
+            throw new \moodle_exception('error:notavailable', 'confcheckin');
         }
     }
 

@@ -12,4 +12,16 @@
     </copyrights>
     <customised>true</customised>
   </library>
+  <library>
+    <location>thirdparty/notosansjp/notosansjp.php</location>
+    <name>Noto Sans JP</name>
+    <description>TCPDF-embedded-font conversion of Noto Sans JP Regular, used by classes/local/pdf_generator.php so Japanese (and other non-Latin-script) template content renders correctly on generated PDFs instead of as mojibake. See thirdparty/notosansjp/README.md for the full sourcing/conversion process.</description>
+    <version>Regular (wght=400 static instance)</version>
+    <license>OFL-1.1</license>
+    <repository>https://github.com/google/fonts/tree/main/ofl/notosansjp</repository>
+    <copyrights>
+      <copyright>2014-2021, Adobe (Source Han Sans design); Google Fonts distribution</copyright>
+    </copyrights>
+    <customised>true</customised>
+  </library>
 </libraries>

@@ -130,7 +130,11 @@
 @media (prefers-reduced-motion: reduce) {
     .mod_confcheckin-scanner-flash,
     .mod_confcheckin-scanner-flash .mod_confcheckin-scanner-checkmark {
-        animation-duration: 0.01s;
+        /* stylelint's time-min-milliseconds wants at least 100ms, to avoid an
+           animation so fast it risks the same flashing/seizure concern
+           prefers-reduced-motion exists to avoid -- still near-instant, but not
+           under the accessibility-safe floor. */
+        animation-duration: 0.1s;
     }
 }
 

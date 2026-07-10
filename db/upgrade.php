@@ -120,7 +120,7 @@ function xmldb_confcheckin_upgrade($oldversion) {
     }
 
     if ($oldversion < 2026070701) {
-        // "Add to group" (user request, 2026-07-07): the OPPOSITE direction from
+        // The "Add to group" feature (user request, 2026-07-07): the OPPOSITE direction from
         // groupid above -- a user issued a ticket of this type is automatically added
         // to this group, instead of group membership auto-granting a ticket. See
         // db/install.xml's field comment.
@@ -146,7 +146,7 @@ function xmldb_confcheckin_upgrade($oldversion) {
             $dbman->change_field_default($table, $field);
         }
 
-        // "Max tickets per user" (user request, 2026-07-08): a per-ticket-type cap
+        // The "Max tickets per user" feature (user request, 2026-07-08): a per-ticket-type cap
         // on how many a single user may hold, default 1, null means unlimited --
         // see db/install.xml's field comment and
         // classes/local/ticket_service.php's require_within_maxperuser().
@@ -185,6 +185,22 @@ function xmldb_confcheckin_upgrade($oldversion) {
         );
 
         upgrade_mod_savepoint(true, 2026070901, 'confcheckin');
+    }
+
+    if ($oldversion < 2026071001) {
+        // Validfrom/validto are repurposed from (never-enforced) ticket admission
+        // validity to an acquisition/availability window (user request, 2026-07-10,
+        // e.g. early-bird campaigns) -- see those fields' own install.xml comments.
+        // showavailability controls whether the window is shown to users; existing
+        // ticket types default to shown (1), matching validfrom/validto's previous
+        // always-shown-when-set display behaviour on purchase.php.
+        $table = new xmldb_table('confcheckin_tickettype');
+        $field = new xmldb_field('showavailability', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '1', 'validto');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_mod_savepoint(true, 2026071001, 'confcheckin');
     }
 
     return true;

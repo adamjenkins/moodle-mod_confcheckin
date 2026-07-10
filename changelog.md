@@ -2,6 +2,44 @@
 
 ## [0.1.0] - Unreleased
 
+- validfrom/validto repurposed as an enforced availability window
+  (2026-07-10, user-requested): previously informational-only (lang strings
+  said so explicitly; nothing in the purchase/free-claim flow actually read
+  them). Now genuinely enforced in `ticket_service::require_eligible()`
+  (called from `issue_free_ticket()`/`issue_purchased_ticket()`, same as the
+  existing eligibility checks) -- useful for early-bird-style campaigns.
+  `redeem_promocode()` deliberately still bypasses it, same precedent as it
+  already bypassing eligibility checks entirely. New `showavailability`
+  column/checkbox controls whether the actual dates are shown to users on
+  the purchase page; when off, a ticket type outside its window shows a
+  generic "not currently available" message instead (no date leak). New
+  `ticket_service::is_within_availability_window()` display helper backs
+  both the enforcement and purchase.php's display logic.
+
+- Ticket type visible quick-toggle (2026-07-10, user-requested): the
+  "Manage ticket types" page's Visible column is now a switch
+  (`amd/src/tickettype_toggle.js` + new `mod_confcheckin_toggle_tickettype_visible`
+  AJAX external function, following `mod_confscheduler`'s `toggle_favourite`
+  pattern) instead of static Yes/No text, so an organiser can enable/disable
+  a ticket type without opening the edit form.
+
+- Receipt cost placeholder + Japanese PDF mojibake fix (2026-07-10,
+  user-reported):
+  - **New `[[cost]]` placeholder**, added to `placeholder::build_context()`
+    and the built-in default receipt template — formatted via
+    `\core_payment\helper::get_cost_as_string()`, the same formatter
+    tickettypes.php's Manage page already uses.
+  - **Fixed: Japanese (and any other non-Latin-script) template text
+    rendered as mojibake on every generated PDF** (badge/ticket/receipt/
+    certificate) — `pdf_generator::build()` never called `SetFont()`, so
+    every PDF silently used TCPDF's Latin-only default (Helvetica). Now
+    bundles and embeds Noto Sans JP Regular (SIL OFL 1.1 — see
+    `fonts/README.md` for the license/sourcing/conversion details) via
+    TCPDF's custom-font mechanism, registered under all four styles
+    (Regular/Bold/Italic/BoldItalic all point at the same Regular-only file,
+    since bold/italic markup would otherwise fail outright rather than
+    degrade gracefully).
+
 - Camera-only QR scanner rework (2026-07-09) — `scan.php` no longer has a
   manual text-entry field or "Check in" button (and, with it, no more
   USB/Bluetooth barcode-scanner-gun support): the camera now starts

@@ -122,6 +122,11 @@ class placeholder {
      * the first) -- see render_presentationinfo()'s docblock for its own mini
      * placeholder syntax and per-template-type configurability.
      *
+     * 'cost' (2026-07-10, user-requested) is the ticket type's price formatted via
+     * \core_payment\helper::get_cost_as_string() -- the same formatter
+     * tickettypes.php's Manage page uses -- so it renders correctly for free
+     * tickets and respects the ticket type's own currency.
+     *
      * @param \stdClass $confcheckin The confcheckin instance record
      * @param \stdClass $tickettype The confcheckin_tickettype record
      * @param \stdClass $ticket The confcheckin_ticket record
@@ -143,6 +148,7 @@ class placeholder {
             'fullname'        => s(fullname($user)),
             'email'           => s($user->email),
             'tickettype'      => format_string($tickettype->name),
+            'cost'            => s(\core_payment\helper::get_cost_as_string((float) $tickettype->price, $tickettype->currency)),
             'confcheckinname' => format_string($confcheckin->name),
             'coursefullname'  => format_string($course->fullname),
             'courseshortname' => format_string($course->shortname),

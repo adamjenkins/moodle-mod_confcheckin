@@ -114,7 +114,7 @@ final class placeholder_test extends advanced_testcase {
         // (to look up this template type's own presentationinfoformat) and $user->id
         // (as part of that no-op eligibility check), so a hand-built stub needs both.
         $confcheckin = (object) ['id' => 0, 'name' => 'My Conf', 'course' => $course->id];
-        $tickettype = (object) ['name' => 'General'];
+        $tickettype = (object) ['name' => 'General', 'price' => '0.00', 'currency' => 'USD'];
         $ticket = (object) ['origin' => 'free', 'qrtoken' => 'abc123'];
         $user = (object) ['id' => 0, 'firstname' => 'A & B', 'lastname' => 'Ltd', 'email' => 'a@b.com'];
         // Moodle's fullname() needs firstnamephonetic/etc fields to be at least set
@@ -139,7 +139,7 @@ final class placeholder_test extends advanced_testcase {
 
         $course = $this->getDataGenerator()->create_course(['fullname' => 'My Course', 'shortname' => 'MC101']);
         $confcheckin = (object) ['id' => 0, 'name' => 'My Conf', 'course' => $course->id];
-        $tickettype = (object) ['name' => 'General'];
+        $tickettype = (object) ['name' => 'General', 'price' => '0.00', 'currency' => 'USD'];
         $ticket = (object) ['origin' => 'free', 'qrtoken' => 'abc123'];
         $user = $this->getDataGenerator()->create_user();
 
@@ -147,6 +147,28 @@ final class placeholder_test extends advanced_testcase {
 
         $this->assertSame('My Course', $context['coursefullname']);
         $this->assertSame('MC101', $context['courseshortname']);
+    }
+
+    /**
+     * build_context() includes 'cost', formatted via
+     * \core_payment\helper::get_cost_as_string() (same formatter tickettypes.php's
+     * Manage page uses), sourced from the ticket type's own price/currency.
+     */
+    public function test_build_context_includes_cost_field(): void {
+        $this->resetAfterTest();
+
+        $course = $this->getDataGenerator()->create_course();
+        $confcheckin = (object) ['id' => 0, 'name' => 'My Conf', 'course' => $course->id];
+        $tickettype = (object) ['name' => 'Presenter', 'price' => '25.00', 'currency' => 'USD'];
+        $ticket = (object) ['origin' => 'free', 'qrtoken' => 'abc123'];
+        $user = $this->getDataGenerator()->create_user();
+
+        $context = placeholder::build_context($confcheckin, $tickettype, $ticket, $user, 'badge');
+
+        $this->assertSame(
+            \core_payment\helper::get_cost_as_string(25.00, 'USD'),
+            $context['cost']
+        );
     }
 
     /**

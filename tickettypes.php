@@ -117,6 +117,7 @@ if ($edittickettype) {
         'presenteronly' => $edittickettype->presenteronly,
         'validfrom'     => $edittickettype->validfrom,
         'validto'       => $edittickettype->validto,
+        'showavailability' => $edittickettype->showavailability,
         'sortorder'     => $edittickettype->sortorder,
         'visible'       => $edittickettype->visible,
         'groupid'             => $edittickettype->groupid ?? 0,
@@ -179,6 +180,7 @@ if ($tickettypeform->is_cancelled()) {
         'presenteronly'       => (int) $formdata->presenteronly,
         'validfrom'           => !empty($formdata->validfrom) ? (int) $formdata->validfrom : null,
         'validto'             => !empty($formdata->validto) ? (int) $formdata->validto : null,
+        'showavailability'    => (int) $formdata->showavailability,
         'sortorder'           => (int) $formdata->sortorder,
         'visible'             => (int) $formdata->visible,
         'groupid'             => $groupid,
@@ -315,13 +317,32 @@ if ($tickettypes) {
             ['title' => get_string('delete')]
         );
 
+        // A switch, not a static Yes/No, so visibility can be toggled without leaving
+        // this page (user request, 2026-07-10) -- wired by amd/src/tickettype_toggle.js
+        // via the mod_confcheckin_toggle_tickettype_visible AJAX external function.
+        $visibleswitch = html_writer::div(
+            html_writer::empty_tag('input', [
+                'type'                => 'checkbox',
+                'class'               => 'custom-control-input mod_confcheckin-tickettype-visible-toggle',
+                'id'                  => 'mod_confcheckin-tickettype-visible-' . $tickettype->id,
+                'data-cmid'           => $cm->id,
+                'data-tickettypeid'   => $tickettype->id,
+                'checked'             => $tickettype->visible ? 'checked' : null,
+            ]) . html_writer::tag(
+                'label',
+                html_writer::span(get_string('visible', 'confcheckin'), 'sr-only'),
+                ['class' => 'custom-control-label', 'for' => 'mod_confcheckin-tickettype-visible-' . $tickettype->id]
+            ),
+            'custom-control custom-switch'
+        );
+
         $table->data[] = [
             format_string($tickettype->name),
             \core_payment\helper::get_cost_as_string((float) $tickettype->price, $tickettype->currency),
             $capacitylabel,
             $maxperuserlabel,
             $tickettype->presenteronly ? get_string('yes') : get_string('no'),
-            $tickettype->visible ? get_string('yes') : get_string('no'),
+            $visibleswitch,
             $autograntlabel,
             $eligibilitylabel,
             $addtogrouplabel,
@@ -329,6 +350,7 @@ if ($tickettypes) {
         ];
     }
 
+    $PAGE->requires->js_call_amd('mod_confcheckin/tickettype_toggle', 'init');
     echo html_writer::table($table);
 } else {
     echo $OUTPUT->notification(get_string('notickettypes', 'confcheckin'), 'info');

@@ -672,7 +672,7 @@ final class ticket_service_test extends advanced_testcase {
         $group = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
         $tickettypeid = $this->create_tickettype((int) $confcheckin->id, ['addtogroupid' => $group->id]);
 
-        // groups_add_member() itself (Moodle core, group/lib.php) silently no-ops for a
+        // Groups_add_member() itself (Moodle core, group/lib.php) silently no-ops for a
         // user not enrolled in the group's course -- a real precondition, not something
         // this feature can or should override, so the fixture enrols the user first,
         // the same as any real ticket buyer would already need to be to even reach
@@ -826,5 +826,85 @@ final class ticket_service_test extends advanced_testcase {
         ]));
         $this->assertSame((int) $user->id, (int) $ticket->userid);
         $this->assertDebuggingNotCalled();
+    }
+
+    /**
+     * is_within_availability_window(): both null means no restriction; a $now before
+     * validfrom or after validto is outside the window; a $now between them (or
+     * exactly on a boundary) is within it.
+     */
+    public function test_is_within_availability_window(): void {
+        $this->resetAfterTest();
+
+        $noboundaries = (object) ['validfrom' => null, 'validto' => null];
+        $this->assertTrue(ticket_service::is_within_availability_window($noboundaries, 12345));
+
+        $windowed = (object) ['validfrom' => 1000, 'validto' => 2000];
+        $this->assertFalse(ticket_service::is_within_availability_window($windowed, 999));
+        $this->assertTrue(ticket_service::is_within_availability_window($windowed, 1000));
+        $this->assertTrue(ticket_service::is_within_availability_window($windowed, 1500));
+        $this->assertTrue(ticket_service::is_within_availability_window($windowed, 2000));
+        $this->assertFalse(ticket_service::is_within_availability_window($windowed, 2001));
+    }
+
+    /**
+     * issue_free_ticket() refuses a claim outside the ticket type's acquisition
+     * window (validfrom/validto, user request 2026-07-10, e.g. early-bird
+     * campaigns) -- both a not-yet-open and an already-closed window.
+     */
+    public function test_issue_free_ticket_rejects_outside_availability_window(): void {
+        $this->resetAfterTest();
+
+        $confcheckinid = $this->create_confcheckin();
+        $notyetopenid = $this->create_tickettype($confcheckinid, ['validfrom' => time() + DAYSECS]);
+        $alreadyclosedid = $this->create_tickettype($confcheckinid, ['validto' => time() - DAYSECS]);
+        $user = $this->getDataGenerator()->create_user();
+
+        try {
+            ticket_service::issue_free_ticket($confcheckinid, $notyetopenid, (int) $user->id);
+            $this->fail('Expected a moodle_exception for a not-yet-open availability window.');
+        } catch (\moodle_exception $e) {
+            $this->assertStringContainsString(get_string('error:notavailable', 'confcheckin'), $e->getMessage());
+        }
+
+        $this->expectException(\moodle_exception::class);
+        ticket_service::issue_free_ticket($confcheckinid, $alreadyclosedid, (int) $user->id);
+    }
+
+    /**
+     * issue_purchased_ticket() re-checks the same availability window -- the
+     * defence-in-depth fix that stops a crafted direct core_payment request from
+     * buying outside the window purchase.php merely hides in the UI.
+     */
+    public function test_issue_purchased_ticket_rejects_outside_availability_window(): void {
+        $this->resetAfterTest();
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype(
+            $confcheckinid,
+            ['price' => '50.00', 'validfrom' => time() + DAYSECS]
+        );
+        $user = $this->getDataGenerator()->create_user();
+
+        $this->expectException(\moodle_exception::class);
+        ticket_service::issue_purchased_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+    }
+
+    /**
+     * redeem_promocode() deliberately does NOT enforce the availability window --
+     * same precedent as it bypassing eligibility checks entirely (an organiser
+     * handing someone a code is itself the authorisation).
+     */
+    public function test_redeem_promocode_bypasses_availability_window(): void {
+        $this->resetAfterTest();
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid, ['validfrom' => time() + DAYSECS]);
+        $this->create_promocode($confcheckinid, ['tickettypeid' => $tickettypeid]);
+        $user = $this->getDataGenerator()->create_user();
+
+        $ticket = ticket_service::redeem_promocode($confcheckinid, 'TESTCODE', (int) $user->id);
+
+        $this->assertSame('promo', $ticket->origin);
     }
 }

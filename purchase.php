@@ -84,6 +84,12 @@ if ($action === 'free') {
             // ticket_service::issue_free_ticket() re-checks this again itself.
             throw new \moodle_exception('error:noteligible', 'confcheckin');
         }
+        if (!ticket_service::is_within_availability_window($tickettype)) {
+            // Same defence-in-depth reasoning as the eligibility check above, for the
+            // acquisition window (user request, 2026-07-10) -- issue_free_ticket()'s
+            // own require_eligible() re-checks this again itself.
+            throw new \moodle_exception('error:notavailable', 'confcheckin');
+        }
 
         ticket_service::issue_free_ticket($confcheckin->id, $tickettypeid, (int) $USER->id);
 
@@ -210,6 +216,7 @@ foreach ($tickettypes as $tickettype) {
 
     $haspcapacity = ticket_service::has_capacity_for_display($tickettype);
     $reachedmaxperuser = ticket_service::has_reached_maxperuser_for_display($tickettype, (int) $USER->id);
+    $withinwindow = ticket_service::is_within_availability_window($tickettype);
     $isfree = confcheckin_parse_price((string) $tickettype->price) !== false
         && abs((float) $tickettype->price) < 0.005;
 
@@ -217,18 +224,29 @@ foreach ($tickettypes as $tickettype) {
     echo html_writer::start_div('card-body');
     echo html_writer::tag('h5', format_string($tickettype->name), ['class' => 'card-title']);
 
-    $validitybits = [];
-    if ($tickettype->validfrom) {
-        $validitybits[] = get_string('validfromdate', 'confcheckin', userdate($tickettype->validfrom, get_string('strftimedate')));
-    }
-    if ($tickettype->validto) {
-        $validitybits[] = get_string('validtodate', 'confcheckin', userdate($tickettype->validto, get_string('strftimedate')));
-    }
-    if ($validitybits) {
-        echo html_writer::tag('p', implode(' ', $validitybits), ['class' => 'text-muted small']);
+    // The actual dates are only ever shown when showavailability is on -- when it's
+    // off, a ticket type outside its window falls through to the generic
+    // "not currently available" notification below instead (no date leak).
+    if ($tickettype->showavailability) {
+        $validitybits = [];
+        if ($tickettype->validfrom) {
+            $validitybits[] = get_string(
+                'validfromdate',
+                'confcheckin',
+                userdate($tickettype->validfrom, get_string('strftimedate'))
+            );
+        }
+        if ($tickettype->validto) {
+            $validitybits[] = get_string('validtodate', 'confcheckin', userdate($tickettype->validto, get_string('strftimedate')));
+        }
+        if ($validitybits) {
+            echo html_writer::tag('p', implode(' ', $validitybits), ['class' => 'text-muted small']);
+        }
     }
 
-    if (!$haspcapacity) {
+    if (!$withinwindow) {
+        echo $OUTPUT->notification(get_string('error:notavailable', 'confcheckin'), 'warning');
+    } else if (!$haspcapacity) {
         echo $OUTPUT->notification(get_string('soldout', 'confcheckin'), 'warning');
     } else if ($reachedmaxperuser) {
         echo $OUTPUT->notification(get_string('maxperuserreached', 'confcheckin'), 'warning');

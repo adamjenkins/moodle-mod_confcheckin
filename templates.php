@@ -124,7 +124,7 @@ echo html_writer::tag('p', implode(' | ', $tablinks));
 // Built from placeholder::wrap() rather than a fixed lang string, so this always
 // shows whichever delimiter pair is CURRENTLY configured (see settings.php).
 $placeholdernames = [
-    'fullname', 'email', 'tickettype', 'confcheckinname', 'coursefullname', 'courseshortname',
+    'fullname', 'email', 'tickettype', 'cost', 'confcheckinname', 'coursefullname', 'courseshortname',
     'origin', 'qrtoken', 'qrcode',
 ];
 $placeholderlist = implode(', ', array_map([placeholder::class, 'wrap'], $placeholdernames));

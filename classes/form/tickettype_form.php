@@ -110,6 +110,10 @@ class tickettype_form extends \moodleform {
         );
         $mform->addHelpButton('validto', 'validto', 'confcheckin');
 
+        $mform->addElement('advcheckbox', 'showavailability', get_string('showavailability', 'confcheckin'));
+        $mform->addHelpButton('showavailability', 'showavailability', 'confcheckin');
+        $mform->setDefault('showavailability', 1);
+
         $mform->addElement('text', 'sortorder', get_string('sortorder', 'confcheckin'), ['size' => 4]);
         $mform->setType('sortorder', PARAM_INT);
         $mform->setDefault('sortorder', 0);

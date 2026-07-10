@@ -32,4 +32,11 @@ $functions = [
         'ajax'         => true,
         'capabilities' => 'mod/confcheckin:scancheckin',
     ],
+    'mod_confcheckin_toggle_tickettype_visible' => [
+        'classname'    => 'mod_confcheckin\external\toggle_tickettype_visible',
+        'description'  => 'Sets a ticket type\'s visible flag, for the quick-toggle switch on the Manage ticket types page.',
+        'type'         => 'write',
+        'ajax'         => true,
+        'capabilities' => 'mod/confcheckin:managetickettypes',
+    ],
 ];

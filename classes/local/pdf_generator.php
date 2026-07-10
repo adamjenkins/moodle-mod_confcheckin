@@ -71,6 +71,7 @@ class pdf_generator {
             'receipt' => '<h2>' . $p('confcheckinname') . '</h2>'
                 . '<p>' . get_string('defaulttemplate:receiptfor', 'confcheckin', $p('fullname')) . '</p>'
                 . '<p>' . get_string('defaulttemplate:tickettype', 'confcheckin', $p('tickettype')) . '</p>'
+                . '<p>' . get_string('defaulttemplate:cost', 'confcheckin', $p('cost')) . '</p>'
                 . '<p>' . get_string('defaulttemplate:origin', 'confcheckin', $p('origin')) . '</p>',
             'certificate' => '<div style="text-align:center;">'
                 . '<h1>' . get_string('defaulttemplate:certificatetitle', 'confcheckin') . '</h1>'
@@ -156,6 +157,31 @@ class pdf_generator {
         $pdf->SetCreator('Moodle mod_confcheckin');
         $pdf->SetTitle(format_string($confcheckin->name) . ' - ' . get_string($templatetype, 'confcheckin'));
         $pdf->SetMargins(15, 15, 15);
+
+        // Without this, TCPDF falls back to its own default (Latin-only Helvetica),
+        // which has no CJK glyph coverage -- every template with Japanese content
+        // (or any other non-Latin script Noto Sans JP covers) rendered as mojibake.
+        // Moodle core's own CJK CID font support is deliberately unusable here (see
+        // lib/pdflib.php's get_font_families(), which filters out 'cid0*' fonts), so
+        // this plugin bundles its own font instead, under thirdparty/ (same
+        // convention as amd/src/scanner.js's vendored jsQR) -- see
+        // thirdparty/notosansjp/README.md and thirdpartylibs.xml.
+        //
+        // Registered under all four styles, all pointing at the same (Regular-only)
+        // font file: only one weight was bundled, so writeHTML() rendering a <strong>/
+        // <h2>/etc. (which requests the Bold style) would otherwise fail outright --
+        // TCPDF has no fallback when a requested style's font file can't be found, it
+        // throws. Reusing the Regular outlines for B/I/BI means bold/italic markup
+        // renders as plain weight rather than true bold/italic, which is an accepted
+        // tradeoff for a single-weight bundled font (the same one TCPDF's own
+        // documentation describes for exactly this situation).
+        $fontfile = $CFG->dirroot . '/mod/confcheckin/thirdparty/notosansjp/notosansjp.php';
+        $pdf->AddFont('notosansjp', '', $fontfile);
+        $pdf->AddFont('notosansjp', 'B', $fontfile);
+        $pdf->AddFont('notosansjp', 'I', $fontfile);
+        $pdf->AddFont('notosansjp', 'BI', $fontfile);
+        $pdf->SetFont('notosansjp', '');
+
         $pdf->AddPage();
         $pdf->writeHTML($html, true, false, true, false, '');
 
