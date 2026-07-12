@@ -721,12 +721,19 @@ final class ticket_service_test extends advanced_testcase {
 
     /**
      * The per-user cap boundary (FABLE.md review, 2026-07-09 -- the feature
-     * shipped without any test): N tickets are allowed, the N+1th is rejected,
-     * and NULL means unlimited.
+     * shipped without any test): N tickets are allowed, the N+1th is rejected.
+     *
+     * The expected exception MUST stay the last ticket_service call in this
+     * test: on postgres/mssql, advanced_testcase wraps each test in its own
+     * delegated transaction, so the rollback inside issue_free_ticket() is a
+     * NESTED rollback that sets force_rollback for the rest of the test --
+     * any later successful issuance would then die at allow_commit() with
+     * "Transactions already disposed" (exactly the 2026-07-12 CI-only
+     * failure; invisible on mariadb, which gets no wrapper transaction).
+     * Hence the three formerly-combined maxperuser scenarios are three tests.
      */
     public function test_maxperuser_boundary(): void {
         $this->resetAfterTest();
-        global $DB;
 
         $confcheckinid = $this->create_confcheckin();
         $tickettypeid = $this->create_tickettype($confcheckinid, ['maxperuser' => 2]);
@@ -744,14 +751,40 @@ final class ticket_service_test extends advanced_testcase {
                 $e->getMessage()
             );
         }
+    }
 
-        // Another user is unaffected by the first user's cap.
+    /**
+     * The maxperuser count is per user: one user sitting exactly at the cap
+     * does not affect another user's issuance. (Deliberately reaches -- but
+     * never exceeds -- the cap, so no rollback occurs; see
+     * test_maxperuser_boundary()'s docblock.)
+     */
+    public function test_maxperuser_other_user_unaffected(): void {
+        $this->resetAfterTest();
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid, ['maxperuser' => 2]);
+        $user = $this->getDataGenerator()->create_user();
         $user2 = $this->getDataGenerator()->create_user();
+
+        ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+        ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $user->id);
+
         $ticket = ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $user2->id);
         $this->assertNotEmpty($ticket->id);
+    }
 
-        // NULL means unlimited.
+    /**
+     * A NULL maxperuser means unlimited.
+     */
+    public function test_maxperuser_null_means_unlimited(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $confcheckinid = $this->create_confcheckin();
         $unlimitedtypeid = $this->create_tickettype($confcheckinid, ['maxperuser' => null, 'name' => 'Unlimited']);
+        $user = $this->getDataGenerator()->create_user();
+
         for ($i = 0; $i < 3; $i++) {
             ticket_service::issue_free_ticket($confcheckinid, $unlimitedtypeid, (int) $user->id);
         }
