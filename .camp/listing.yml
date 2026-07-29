@@ -1,0 +1,23 @@
+# camp listing manifest — descriptive content for your plugin's page.
+# Edit freely and commit; camp ingests this file at each tagged release.
+# Schema: https://camp-registry.org/schema/listing.schema.json
+name: mod_confcheckin
+summary: 'Conference Check-in — a Moodle activity for issuing and selling conference tickets, printing QR-coded badges, recording attendance, and issuing certificates.'
+description: |
+  Sells and issues conference tickets through Moodle's `core_payment` — with
+  ticket types, promo codes, availability windows, capacities and
+  group/enrolment auto-grants — renders QR-coded badges, tickets, receipts and
+  certificates to PDF (Japanese-capable font embedded), and records attendance
+  with a camera QR scanner that also works in the Moodle app, backed by a
+  check-in report. Part of the Conference Tools suite.
+labels:
+  # Required disclosure labels — pick all that apply (RFC §4.7):
+  #   fully-free | freemium | paid-service | external-account
+  #   donation-supported | commercial-support-available
+  - fully-free
+# screenshots:
+#   - path: .camp/screenshots/overview.png
+#     caption: Main view
+# links:
+#   docs: https://…
+#   issues: https://…
