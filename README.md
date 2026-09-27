@@ -22,7 +22,7 @@ Part of the [Conference Tools](https://github.com/adamjenkins/moodle-conference-
 
 ## Requirements
 
-- Moodle 5.2 (`2026042000`) or later.
+- Moodle 5.2 (`2026042000`) or later; supported on Moodle 5.2–5.3 (`$plugin->supported = [502, 503]`).
 - mod_confprogram installed in the same course (its only hard dependency, for presenter-ticket eligibility). It does **not** depend on mod_confsubmissions directly.
 
 ## Installation

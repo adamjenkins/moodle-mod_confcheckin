@@ -2,6 +2,12 @@
 
 ## [0.1.0] - Unreleased
 
+- Declare Moodle 5.3 support (2026-09-27): `version.php` gains
+  `$plugin->supported = [502, 503]` (`requires` stays at 5.2); README
+  Requirements updated to match. Audited against the 5.3beta UPGRADING.md
+  checklist with no code changes needed. CI gains two non-blocking
+  moodle.git `main` (5.3beta) jobs.
+
 - validfrom/validto repurposed as an enforced availability window
   (2026-07-10, user-requested): previously informational-only (lang strings
   said so explicitly; nothing in the purchase/free-claim flow actually read
