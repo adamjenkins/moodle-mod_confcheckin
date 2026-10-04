@@ -1,10 +1,15 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.2] - 2026-10-04
 
+### Changed
+
+- Maturity raised from `MATURITY_ALPHA` to `MATURITY_BETA`.
 - The Japanese language pack (lang/ja) is no longer included: releases ship the English strings
   only, as the Moodle Plugins directory expects. Japanese is provided through Moodle's language
   packs.
+- CI: the non-blocking moodle.git `main` jobs become blocking `MOODLE_503_STABLE` jobs now that
+  Moodle 5.3 is released (PHP 8.3-8.4, PostgreSQL 17, MariaDB 11.4).
 
 ## [0.1.1] - 2026-10-04
 
