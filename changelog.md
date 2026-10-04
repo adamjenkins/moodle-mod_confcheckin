@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- The Japanese language pack (lang/ja) is no longer included: releases ship the English strings
+  only, as the Moodle Plugins directory expects. Japanese is provided through Moodle's language
+  packs.
+
 ## [0.1.1] - 2026-10-04
 
 First tagged release: the in-development 0.1.0 was never tagged, so every
