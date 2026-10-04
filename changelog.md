@@ -1,6 +1,18 @@
 # Changelog
 
-## [0.1.0] - Unreleased
+## [0.1.1] - 2026-10-04
+
+First tagged release: the in-development 0.1.0 was never tagged, so every
+entry in this section ships together.
+
+- Composer: `composer.json` now requires `moodle/composer-installer` `^1.0`
+  (was `*`) and `adamjenkins/moodle-mod_confprogram` `^0.1`, matching the
+  `mod_confprogram` dependency in `version.php`, so `composer require` pulls in
+  the dependency too. The `moodle/moodle` constraint stays `^5.2`.
+- Release infrastructure: releases are published to the camp registry by a new
+  tag-triggered workflow (replacing the retired moodle.org Plugins directory
+  workflow), and `.gitattributes` keeps `.github`, `.camp` and other dev files
+  out of the distribution ZIP.
 
 - Declare Moodle 5.3 support (2026-09-27): `version.php` gains
   `$plugin->supported = [502, 503]` (`requires` stays at 5.2); README
