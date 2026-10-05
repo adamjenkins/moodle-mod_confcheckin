@@ -15,9 +15,23 @@ labels:
   #   fully-free | freemium | paid-service | external-account
   #   donation-supported | commercial-support-available
   - fully-free
-# screenshots:
-#   - path: .camp/screenshots/overview.png
-#     caption: Main view
+screenshots:
+  - path: .camp/screenshots/01-buy-ticket.png
+    caption: 'An attendee buys or claims a ticket: a promo code box, an early-bird type outside its sales window, and paid types with Buy buttons.'
+  - path: .camp/screenshots/02-my-ticket.png
+    caption: 'An attendee''s ticket, how it was obtained and whether they have checked in, with links to their badge, ticket, receipt and certificate PDFs.'
+  - path: .camp/screenshots/03-badge-pdf.png
+    caption: 'A generated badge PDF from an organiser''s template: the presenter''s name, ticket type, presentation and unique QR code.'
+  - path: .camp/screenshots/04-scan-checkin.png
+    caption: 'The camera scanner reading a ticket''s QR code and recording the check-in.'
+  - path: .camp/screenshots/05-checkin-report.png
+    caption: 'The check-in report: every participant''s ticket and check-in status, with manual check-in and remove buttons.'
+  - path: .camp/screenshots/06-ticket-types.png
+    caption: 'Managing ticket types: price, capacity used, limit per user, presenter-only, a visibility switch, auto-grant, eligibility and add-to-group.'
+  - path: .camp/screenshots/07-templates.png
+    caption: Editing the badge template in the Moodle editor, with the available placeholders and the presentation line format.
+  - path: .camp/screenshots/08-promo-codes.png
+    caption: 'Promo codes: which ticket type each one grants, uses so far and expiry.'
 # links:
 #   docs: https://…
 #   issues: https://…
