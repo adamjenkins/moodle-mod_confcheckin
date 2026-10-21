@@ -147,18 +147,18 @@
 }
 
 .mod_confcheckin-scanner-result-success {
-    background-color: #d4edda;
-    color: #155724;
+    background-color: var(--mds-bg-feedback-success-subtle, var(--bs-success-bg-subtle, #d4edda));
+    color: var(--mds-text-feedback-success, var(--bs-success-text-emphasis, #155724));
 }
 
 .mod_confcheckin-scanner-result-warning {
-    background-color: #fff3cd;
-    color: #856404;
+    background-color: var(--mds-bg-feedback-warning-subtle, var(--bs-warning-bg-subtle, #fff3cd));
+    color: var(--mds-text-feedback-warning, var(--bs-warning-text-emphasis, #856404));
 }
 
 .mod_confcheckin-scanner-result-error {
-    background-color: #f8d7da;
-    color: #721c24;
+    background-color: var(--mds-bg-feedback-danger-subtle, var(--bs-danger-bg-subtle, #f8d7da));
+    color: var(--mds-text-feedback-danger, var(--bs-danger-text-emphasis, #721c24));
 }
 
 .mod_confcheckin-scanner-log {
