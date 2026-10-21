@@ -1,12 +1,14 @@
 # Changes
 
-## v0.1.2
+## v0.1.3
 
-- Maturity raised from Alpha to Beta.
-- The Japanese language pack (lang/ja) is no longer included: releases ship the English strings
-  only, as the Moodle Plugins directory expects. Japanese is provided through Moodle's language
-  packs.
-- Automated tests now run against the released Moodle 5.3 (MOODLE_503_STABLE) instead of
-  Moodle's development branch.
+- The camp listing now has screenshots with captions and links to the user manuals and the issue
+  tracker.
+- Colours follow the Moodle Design System tokens, falling back to the Bootstrap variables and then
+  the previous colours, so the scan result boxes follow Moodle 5.3's dark colour mode while Moodle 5.2 looks
+  unchanged.
+- Pages no longer repeat the activity name (and, where Moodle's activity header already shows it,
+  the description) under Moodle's own page header; page headings follow the activity header's
+  heading level.
 
 See `changelog.md` for the full development history.
