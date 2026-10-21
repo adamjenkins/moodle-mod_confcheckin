@@ -1,15 +1,34 @@
 # camp listing manifest — descriptive content for your plugin's page.
 # Edit freely and commit; camp ingests this file at each tagged release.
 # Schema: https://camp-registry.org/schema/listing.schema.json
-name: mod_confcheckin
-summary: 'Conference Check-in — a Moodle activity for issuing and selling conference tickets, printing QR-coded badges, recording attendance, and issuing certificates.'
+name: Conference Check-in
+summary: 'Conference Check-in sells and issues conference tickets in a Moodle course, prints QR-coded badges and tickets plus receipts and certificates, and records check-in with a camera QR scanner.'
 description: |
-  Sells and issues conference tickets through Moodle's `core_payment` — with
-  ticket types, promo codes, availability windows, capacities and
-  group/enrolment auto-grants — renders QR-coded badges, tickets, receipts and
-  certificates to PDF (Japanese-capable font embedded), and records attendance
-  with a camera QR scanner that also works in the Moodle app, backed by a
-  check-in report. Part of the Conference Tools suite.
+  The registration desk of the Conference Tools suite (with Conference
+  Submissions, Conference Program and Conference Scheduler).
+
+  - **Ticket types** with a price in any ISO 4217 currency, an optional
+    capacity, limit per user and sales window (such as an early bird), a
+    visibility switch, presenter-only types for speakers on accepted
+    submissions in the linked Conference Program, group or enrolment-method
+    eligibility, automatic free tickets for a group or enrolment method (with
+    an Orphaned tickets report), and adding ticket holders to a group.
+  - **Getting a ticket:** paid tickets through Moodle's own payment system
+    (`core_payment`) and the site's gateway; free types, promo codes and
+    auto-grants issue a ticket straight away.
+  - **PDFs:** organiser-edited badge, ticket, receipt and certificate
+    templates with placeholders and a unique QR code, rendered with a bundled
+    Japanese-capable font. Receipts are for bought tickets; certificates become
+    available after check-in. Organisers can download each type as one ZIP.
+  - **Check-in:** a camera QR scanner (built-in barcode detection, or the
+    included jsQR decoder in Safari and Firefox) with a green flash, a tick and
+    a beep that can be muted; it needs HTTPS. A sortable check-in report lists
+    every enrolled participant, with manual check-in and remove.
+  - Backup and restore (restored tickets get new QR codes), course reset, and a
+    privacy provider.
+
+  Requires Moodle 5.2 or 5.3 and mod_confprogram. A Moodle app view for
+  scanning is included but has not yet been tested in a real app build.
 labels:
   # Required disclosure labels — pick all that apply (RFC §4.7):
   #   fully-free | freemium | paid-service | external-account
@@ -17,21 +36,21 @@ labels:
   - fully-free
 screenshots:
   - path: .camp/screenshots/01-buy-ticket.png
-    caption: 'An attendee buys or claims a ticket: a promo code box, an early-bird type outside its sales window, and paid types with Buy buttons.'
+    caption: 'An attendee buys or claims a ticket: a promo code box, an early-bird type outside its window, and paid types.'
   - path: .camp/screenshots/02-my-ticket.png
-    caption: 'An attendee''s ticket, how it was obtained and whether they have checked in, with links to their badge, ticket, receipt and certificate PDFs.'
+    caption: 'An attendee''s ticket and check-in status, with links to their badge, ticket, receipt and certificate PDFs.'
   - path: .camp/screenshots/03-badge-pdf.png
-    caption: 'A generated badge PDF from an organiser''s template: the presenter''s name, ticket type, presentation and unique QR code.'
+    caption: 'A generated badge PDF: the presenter''s name, ticket type, presentation and unique QR code.'
   - path: .camp/screenshots/04-scan-checkin.png
     caption: 'The camera scanner reading a ticket''s QR code and recording the check-in.'
   - path: .camp/screenshots/05-checkin-report.png
     caption: 'The check-in report: every participant''s ticket and check-in status, with manual check-in and remove buttons.'
   - path: .camp/screenshots/06-ticket-types.png
-    caption: 'Managing ticket types: price, capacity used, limit per user, presenter-only, a visibility switch, auto-grant, eligibility and add-to-group.'
+    caption: 'Ticket types: price, capacity used, limit per user, presenter-only and a visibility switch (Volunteer is hidden).'
   - path: .camp/screenshots/07-templates.png
     caption: Editing the badge template in the Moodle editor, with the available placeholders and the presentation line format.
   - path: .camp/screenshots/08-promo-codes.png
     caption: 'Promo codes: which ticket type each one grants, uses so far and expiry.'
-# links:
-#   docs: https://…
-#   issues: https://…
+links:
+  docs: https://github.com/adamjenkins/conference-tools-for-moodle
+  issues: https://github.com/adamjenkins/moodle-mod_confcheckin/issues
