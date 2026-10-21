@@ -59,7 +59,6 @@ foreach ($tickettypes as $tickettype) {
 
 if (!$tickettypeoptions) {
     echo $OUTPUT->header();
-    echo $OUTPUT->heading(format_string($confcheckin->name), 2);
     echo $OUTPUT->notification(get_string('notickettypesyet', 'confcheckin'), 'info');
     echo $OUTPUT->continue_button(new moodle_url('/mod/confcheckin/tickettypes.php', ['id' => $cm->id]));
     echo $OUTPUT->footer();
@@ -74,7 +73,6 @@ if ($deleteid) {
 
     if (!$confirm) {
         echo $OUTPUT->header();
-        echo $OUTPUT->heading(format_string($confcheckin->name), 2);
         echo $OUTPUT->confirm(
             get_string('confirmdeletepromocode', 'confcheckin', $promocode->code),
             new moodle_url($pageurl, ['delete' => $deleteid, 'confirm' => 1, 'sesskey' => sesskey()]),
@@ -161,9 +159,10 @@ if ($promocodeform->is_cancelled()) {
     }
 }
 
+// The activity name is already shown by core's page/activity header (see view.php).
+$headinglevel = $PAGE->activityheader->get_heading_level();
 echo $OUTPUT->header();
-echo $OUTPUT->heading(format_string($confcheckin->name), 2);
-echo $OUTPUT->heading(get_string('managepromocodes', 'confcheckin'), 3);
+echo $OUTPUT->heading(get_string('managepromocodes', 'confcheckin'), $headinglevel);
 
 $promocodes = $DB->get_records('confcheckin_promocode', ['confcheckin' => $confcheckin->id], 'code ASC');
 
@@ -217,7 +216,7 @@ if ($promocodes) {
 
 echo $OUTPUT->heading(
     $editid ? get_string('editpromocode', 'confcheckin') : get_string('addpromocode', 'confcheckin'),
-    4
+    $headinglevel + 1
 );
 $promocodeform->display();
 

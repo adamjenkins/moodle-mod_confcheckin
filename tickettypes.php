@@ -60,7 +60,6 @@ if ($deleteid) {
 
     if (!$confirm) {
         echo $OUTPUT->header();
-        echo $OUTPUT->heading(format_string($confcheckin->name), 2);
         // The confirmation states what the delete actually affects: issued tickets
         // survive (unchanged behaviour), but the type's promo codes are now
         // cascade-deleted with it -- they previously dangled and failed at
@@ -223,9 +222,10 @@ if ($tickettypeform->is_cancelled()) {
     );
 }
 
+// The activity name is already shown by core's page/activity header (see view.php).
+$headinglevel = $PAGE->activityheader->get_heading_level();
 echo $OUTPUT->header();
-echo $OUTPUT->heading(format_string($confcheckin->name), 2);
-echo $OUTPUT->heading(get_string('managetickettypes', 'confcheckin'), 3);
+echo $OUTPUT->heading(get_string('managetickettypes', 'confcheckin'), $headinglevel);
 echo html_writer::tag(
     'p',
     html_writer::link(
@@ -358,7 +358,7 @@ if ($tickettypes) {
 
 echo $OUTPUT->heading(
     $editid ? get_string('edittickettype', 'confcheckin') : get_string('addtickettype', 'confcheckin'),
-    4
+    $headinglevel + 1
 );
 $tickettypeform->display();
 

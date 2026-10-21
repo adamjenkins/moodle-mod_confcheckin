@@ -64,7 +64,6 @@ if ($revokeid) {
 
     if (!$confirm) {
         echo $OUTPUT->header();
-        echo $OUTPUT->heading(format_string($confcheckin->name), 2);
         echo $OUTPUT->confirm(
             get_string('confirmrevoketicket', 'confcheckin', $username),
             new moodle_url($pageurl, ['revoke' => $revokeid, 'confirm' => 1, 'sesskey' => sesskey()]),
@@ -78,9 +77,9 @@ if ($revokeid) {
     redirect($pageurl, get_string('ticketrevoked', 'confcheckin'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
+// The activity name is already shown by core's page/activity header (see view.php).
 echo $OUTPUT->header();
-echo $OUTPUT->heading(format_string($confcheckin->name), 2);
-echo $OUTPUT->heading(get_string('orphanedtickets', 'confcheckin'), 3);
+echo $OUTPUT->heading(get_string('orphanedtickets', 'confcheckin'), $PAGE->activityheader->get_heading_level());
 echo html_writer::tag('p', get_string('orphanedtickets_help', 'confcheckin'));
 
 $orphaned = ticket_service::find_orphaned_tickets((int) $confcheckin->id);

@@ -103,9 +103,9 @@ if ($form->is_cancelled()) {
     redirect($pageurl, get_string('templatesaved', 'confcheckin'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
+// The activity name is already shown by core's page/activity header (see view.php).
 echo $OUTPUT->header();
-echo $OUTPUT->heading(format_string($confcheckin->name), 2);
-echo $OUTPUT->heading(get_string('managetemplates', 'confcheckin'), 3);
+echo $OUTPUT->heading(get_string('managetemplates', 'confcheckin'), $PAGE->activityheader->get_heading_level());
 
 $tablinks = [];
 foreach (pdf_generator::VALID_TYPES as $type) {

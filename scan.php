@@ -58,9 +58,9 @@ $PAGE->set_context($context);
 $PAGE->requires->js(new moodle_url('/mod/confcheckin/thirdparty/jsQR/jsQR.js'), true);
 $PAGE->requires->js_call_amd('mod_confcheckin/scanner', 'init', [$cm->id]);
 
+// The activity name is already shown by core's page/activity header (see view.php).
 echo $OUTPUT->header();
-echo $OUTPUT->heading(format_string($confcheckin->name), 2);
-echo $OUTPUT->heading(get_string('scancheckin', 'confcheckin'), 3);
+echo $OUTPUT->heading(get_string('scancheckin', 'confcheckin'), $PAGE->activityheader->get_heading_level());
 
 echo html_writer::tag('p', get_string('scancheckin_help', 'confcheckin'));
 

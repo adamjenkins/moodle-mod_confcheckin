@@ -95,9 +95,9 @@ if ($toggleticketid) {
     redirect($pageurl);
 }
 
+// The activity name is already shown by core's page/activity header (see view.php).
 echo $OUTPUT->header();
-echo $OUTPUT->heading(format_string($confcheckin->name), 2);
-echo $OUTPUT->heading(get_string('checkinreport', 'confcheckin'), 3);
+echo $OUTPUT->heading(get_string('checkinreport', 'confcheckin'), $PAGE->activityheader->get_heading_level());
 echo html_writer::tag('p', get_string('checkinreport_help', 'confcheckin'));
 
 $coursecontext = context_course::instance($course->id);

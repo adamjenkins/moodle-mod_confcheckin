@@ -113,9 +113,10 @@ if ($action === 'promo') {
     }
 }
 
+// The activity name is already shown by core's page/activity header (see view.php).
+$headinglevel = $PAGE->activityheader->get_heading_level();
 echo $OUTPUT->header();
-echo $OUTPUT->heading(format_string($confcheckin->name), 2);
-echo $OUTPUT->heading(get_string('purchaseticket', 'confcheckin'), 3);
+echo $OUTPUT->heading(get_string('purchaseticket', 'confcheckin'), $headinglevel);
 
 // This user's existing tickets for this instance, shown so a repeat visit does not
 // look like nothing happened after a successful purchase/claim.
@@ -127,7 +128,7 @@ $mytickets = $DB->get_records(
 if ($mytickets) {
     $tickettypenames = $DB->get_records_menu('confcheckin_tickettype', ['confcheckin' => $confcheckin->id], '', 'id, name');
     $canviewowncertificate = has_capability('mod/confcheckin:viewowncertificate', $context);
-    echo $OUTPUT->heading(get_string('mytickets', 'confcheckin'), 4);
+    echo $OUTPUT->heading(get_string('mytickets', 'confcheckin'), $headinglevel + 1);
     $mytable = new html_table();
     $mytable->head = [
         get_string('tickettypename', 'confcheckin'),
@@ -167,7 +168,7 @@ if ($mytickets) {
 }
 
 // Promo code redemption box.
-echo $OUTPUT->heading(get_string('redeempromocode', 'confcheckin'), 4);
+echo $OUTPUT->heading(get_string('redeempromocode', 'confcheckin'), $headinglevel + 1);
 echo html_writer::start_tag('form', ['method' => 'post', 'action' => $pageurl->out(false), 'class' => 'form-inline mb-4']);
 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'promo']);
 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
@@ -197,7 +198,7 @@ $tickettypes = $DB->get_records_select(
     'sortorder ASC, id ASC'
 );
 
-echo $OUTPUT->heading(get_string('availabletickettypes', 'confcheckin'), 4);
+echo $OUTPUT->heading(get_string('availabletickettypes', 'confcheckin'), $headinglevel + 1);
 
 if (!$tickettypes) {
     echo $OUTPUT->notification(get_string('notickettypesyet', 'confcheckin'), 'info');
@@ -222,7 +223,7 @@ foreach ($tickettypes as $tickettype) {
 
     echo html_writer::start_div('card mb-3');
     echo html_writer::start_div('card-body');
-    echo html_writer::tag('h5', format_string($tickettype->name), ['class' => 'card-title']);
+    echo html_writer::tag('h' . ($headinglevel + 2), format_string($tickettype->name), ['class' => 'card-title h5']);
 
     // The actual dates are only ever shown when showavailability is on -- when it's
     // off, a ticket type outside its window falls through to the generic
