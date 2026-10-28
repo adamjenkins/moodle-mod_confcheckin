@@ -268,7 +268,9 @@ final class eligibility_test extends advanced_testcase {
             'title'           => 'Second Talk',
             'abstract'        => 'Another abstract.',
             'status'          => 'submitted',
-            'timecreated'     => time(),
+            // Older than the first, so the timecreated DESC listing orders them first, second
+            // (a tie leaves the order to the database, and PostgreSQL returned them reversed).
+            'timecreated'     => time() - 60,
             'timemodified'    => time(),
         ]);
         \mod_confsubmissions\api::sync_speakers($secondid, [['userid' => $presenter->id]]);
