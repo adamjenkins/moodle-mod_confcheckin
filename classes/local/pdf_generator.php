@@ -34,6 +34,12 @@ class pdf_generator {
     /** @var string[] Template types this class knows how to render. */
     public const VALID_TYPES = ['badge', 'ticket', 'receipt', 'certificate'];
 
+    /** @var string[] Image MIME types inline_images() lets through to TCPDF, as data: URIs. */
+    private const INLINE_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif'];
+
+    /** @var int Largest remote template image inline_images() will fetch, in bytes. */
+    private const MAX_REMOTE_IMAGE_BYTES = 5 * 1024 * 1024;
+
     /**
      * The built-in fallback content for a template type, used until an organiser
      * configures their own via templates.php. Deliberately simple: real visual
@@ -149,9 +155,11 @@ class pdf_generator {
 
         $content = self::get_template_content((int) $confcheckin->id, $templatetype);
         $context = placeholder::build_context($confcheckin, $tickettype, $ticket, $user, $templatetype);
-        $html = placeholder::render($content, $context);
+        $html = self::inline_images(placeholder::render($content, $context));
 
-        $pdf = new \pdf();
+        // Use pdf_document, not \pdf: it stops TCPDF reading any URL or server file the
+        // template HTML names (see its class docblock).
+        $pdf = new pdf_document();
         $pdf->SetPrintHeader(false);
         $pdf->SetPrintFooter(false);
         $pdf->SetCreator('Moodle mod_confcheckin');
@@ -186,6 +194,91 @@ class pdf_generator {
         $pdf->writeHTML($html, true, false, true, false, '');
 
         return $pdf;
+    }
+
+    /**
+     * Rewrites every <img> in rendered template HTML so TCPDF only ever sees inline
+     * image data: a data:image/(png|jpeg|gif);base64 source (the [[qrcode]] image,
+     * or one an organiser pasted) is kept; an http(s) source is fetched through
+     * Moodle's \curl, which applies curlsecurityblockedhosts/curlsecurityallowedport,
+     * and inlined if what comes back is a PNG, JPEG or GIF; every other <img> (local
+     * paths, file://, SVG data, TCPDF's '@' streams, a blocked or failed fetch) is
+     * dropped. Left to itself TCPDF fetches template image URLs with its own raw
+     * curl and reads absolute paths off the server's disk. pdf_document refuses those
+     * reads anyway; this keeps legitimate remote logos working and drops what it would
+     * refuse, rather than letting an SVG/EPS source make TCPDF throw.
+     *
+     * @param string $html Rendered template HTML
+     * @return string The same HTML with only inline images left
+     */
+    public static function inline_images(string $html): string {
+        $srcpattern = '/\bsrc\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))/i';
+
+        return preg_replace_callback('/<img\b[^>]*>/i', static function (array $matches) use ($srcpattern): string {
+            $tag = $matches[0];
+            if (preg_match_all($srcpattern, $tag, $srcs, PREG_SET_ORDER) !== 1) {
+                // No src is harmless; two is ambiguous (TCPDF keeps the last), so drop it.
+                return $srcs ? '' : $tag;
+            }
+            // Groups 1-3 are the double-quoted, single-quoted and bare forms; only one matched.
+            $raw = ($srcs[0][1] ?? '') . ($srcs[0][2] ?? '') . ($srcs[0][3] ?? '');
+            $src = trim(html_entity_decode($raw, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+
+            if (preg_match('~^data:image/(png|jpe?g|gif);base64,[A-Za-z0-9+/=\s]*$~i', $src)) {
+                return $tag;
+            }
+            if (!preg_match('~^https?://~i', $src)) {
+                return '';
+            }
+            $datauri = self::fetch_remote_image($src);
+            if ($datauri === null) {
+                return '';
+            }
+
+            return str_replace($srcs[0][0], 'src="' . $datauri . '"', $tag);
+        }, $html);
+    }
+
+    /**
+     * Fetches a remote template image through Moodle's \curl (so the site's curl
+     * security settings apply, redirects included) and returns it as a data: URI, or
+     * null if it is blocked, fails, is too large or is not a PNG, JPEG or GIF. Cached
+     * per request: the bulk badge ZIP (badges.php) renders the same template once per
+     * ticket.
+     *
+     * @param string $url An http(s) URL
+     * @return string|null
+     */
+    private static function fetch_remote_image(string $url): ?string {
+        global $CFG;
+        require_once($CFG->libdir . '/filelib.php');
+
+        $cache = \cache::make_from_params(\cache_store::MODE_REQUEST, 'mod_confcheckin', 'inlineimages');
+        $cached = $cache->get($url);
+        if ($cached !== false) {
+            return $cached === '' ? null : $cached;
+        }
+
+        $datauri = '';
+        $curl = new \curl();
+        $content = $curl->get($url, [], [
+            'CURLOPT_TIMEOUT'        => 10,
+            'CURLOPT_CONNECTTIMEOUT' => 5,
+            'CURLOPT_MAXFILESIZE'    => self::MAX_REMOTE_IMAGE_BYTES,
+        ]);
+        $httpcode = (int) ($curl->get_info()['http_code'] ?? 0);
+        if (
+            !$curl->get_errno() && $httpcode === 200 && is_string($content)
+            && $content !== '' && strlen($content) <= self::MAX_REMOTE_IMAGE_BYTES
+        ) {
+            $info = @getimagesizefromstring($content);
+            if ($info && in_array($info['mime'] ?? '', self::INLINE_IMAGE_TYPES, true)) {
+                $datauri = 'data:' . $info['mime'] . ';base64,' . base64_encode($content);
+            }
+        }
+        $cache->set($url, $datauri);
+
+        return $datauri === '' ? null : $datauri;
     }
 
     /**

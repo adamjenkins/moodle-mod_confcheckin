@@ -41,7 +41,7 @@ final class pdf_generator_test extends advanced_testcase {
     private function create_fixture(): array {
         global $DB;
 
-        $course = $this->getDataGenerator()->create_course();
+        $course = $this->getDataGenerator()->create_course(['summary' => '']);
         $confcheckin = $this->getDataGenerator()->create_module('confcheckin', ['course' => $course->id]);
 
         $tickettypeid = $DB->insert_record('confcheckin_tickettype', (object) [
@@ -148,5 +148,80 @@ final class pdf_generator_test extends advanced_testcase {
 
         $this->assertStringEndsWith('.pdf', $name1);
         $this->assertNotSame($name1, $name2);
+    }
+
+    /**
+     * inline_images() keeps inline PNG/JPEG/GIF data, inlines a fetched remote image,
+     * and drops every <img> TCPDF would otherwise fetch or read off the server's disk:
+     * local paths, file://, '@' streams, SVG data (which can carry its own <image href>)
+     * and a URL Moodle's curl security settings block.
+     */
+    public function test_inline_images_keeps_only_inline_image_data(): void {
+        $this->resetAfterTest();
+
+        // A valid 1x1 PNG.
+        $png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+        $keep = '<img src="data:image/png;base64,' . $png . '" alt="" />';
+        $this->assertSame('<p>' . $keep . '</p>', pdf_generator::inline_images('<p>' . $keep . '</p>'));
+
+        $dropped = [
+            '<img src="/etc/hostname.png">',
+            '<IMG SRC=\'file:///etc/hostname.png\'>',
+            '<img src="@' . base64_encode('<svg xmlns="http://www.w3.org/2000/svg"/>') . '">',
+            '<img src="data:image/svg+xml;base64,' . base64_encode('<svg/>') . '">',
+            '<img src="relative/logo.png">',
+            '<img src="data:image/png;base64,' . $png . '" src="/etc/hostname.png">',
+        ];
+        foreach ($dropped as $tag) {
+            $this->assertSame('<p>ok</p>', pdf_generator::inline_images('<p>' . $tag . 'ok</p>'), $tag);
+        }
+
+        // Blocked before any connection is made, so no network is needed.
+        set_config('curlsecurityblockedhosts', "127.0.0.1\nlocalhost");
+        $this->assertSame('<p></p>', pdf_generator::inline_images('<p><img src="http://127.0.0.1:8080/logo.png"></p>'));
+        // The core url_blocked event reports the block through debugging().
+        $this->assertDebuggingCalled();
+
+        // A remote image that comes back as a real PNG is inlined as a data: URI.
+        \curl::mock_response(base64_decode($png));
+        $inlined = pdf_generator::inline_images('<p><img src="https://example.com/logo.png" alt="logo"></p>');
+        $this->assertSame('<p><img src="data:image/png;base64,' . $png . '" alt="logo"></p>', $inlined);
+
+        // A remote response that is not an image is dropped.
+        \curl::mock_response('{"secret": "metadata"}');
+        $this->assertSame('<p></p>', pdf_generator::inline_images('<p><img src="https://example.com/meta.png"></p>'));
+    }
+
+    /**
+     * build() renders through pdf_document, whose file helpers refuse every URL and
+     * every server file except the document's own TCPDF temp files, so template HTML
+     * that slips an <img> past inline_images() (or a <link> stylesheet, an "img|" list
+     * bullet or an SVG <image>) still cannot make the server fetch or read anything.
+     */
+    public function test_build_uses_a_pdf_document_that_refuses_external_files(): void {
+        $this->resetAfterTest();
+
+        [$confcheckin, $tickettype, $ticket, $user] = $this->create_fixture();
+        $pdf = pdf_generator::build($confcheckin, $tickettype, $ticket, $user, 'badge');
+        $this->assertInstanceOf(pdf_document::class, $pdf);
+
+        // The overrides only work while TCPDF still routes its reads through these names.
+        $this->assertTrue(method_exists(\TCPDF::class, 'fileExists'));
+        $this->assertTrue(method_exists(\TCPDF::class, 'getCachedFileContents'));
+
+        $fileexists = new \ReflectionMethod($pdf, 'fileExists');
+        $getcontents = new \ReflectionMethod($pdf, 'getCachedFileContents');
+        foreach (['http://127.0.0.1:8080/x.png', 'https://example.com/x.css', __FILE__, 'file://' . __FILE__] as $file) {
+            $this->assertFalse($fileexists->invoke($pdf, $file), $file);
+            $this->assertFalse($getcontents->invoke($pdf, $file), $file);
+        }
+
+        // A temp file named like another document's (different file_id) is refused too.
+        make_writable_directory(K_PATH_CACHE);
+        $other = K_PATH_CACHE . '__tcpdf_' . md5('someone-else') . '_img_x';
+        file_put_contents($other, 'x');
+        $this->assertFalse($fileexists->invoke($pdf, $other));
+        $this->assertFalse($getcontents->invoke($pdf, $other));
+        unlink($other);
     }
 }

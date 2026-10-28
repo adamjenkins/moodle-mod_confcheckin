@@ -160,7 +160,10 @@ class placeholder {
         $confprogramcmid = isset($confcheckin->confprogramcmid) ? (int) $confcheckin->confprogramcmid : null;
         $submissions = eligibility::find_presenter_submissions((int) $user->id, $confprogramcmid);
 
-        $context['submissiontitle'] = $submissions ? format_string($submissions[0]->title) : '';
+        // Presenter-typed text: escaped for attributes too (quotes included), not just
+        // format_string()'d, so a template that puts [[submissiontitle]] or [[track]]
+        // inside an attribute cannot be broken out of by a submission title.
+        $context['submissiontitle'] = $submissions ? self::attribute_safe_text($submissions[0]->title) : '';
         $context['track'] = $submissions ? self::track_name($submissions[0]) : '';
         // Short-circuits before touching $confcheckin->id/looking up
         // presentationinfoformat at all for the common non-presenter ticket, not
@@ -204,7 +207,7 @@ class placeholder {
 
         $rendered = array_map(
             static fn (\stdClass $submission): string => strtr((string) $format, [
-                '{title}' => format_string($submission->title),
+                '{title}' => self::attribute_safe_text($submission->title),
                 '{track}' => self::track_name($submission),
             ]),
             $submissions
@@ -303,7 +306,19 @@ class placeholder {
             $cache->set((int) $submission->confsubmissions, $tracks);
         }
 
-        return isset($tracks[$submission->trackid]) ? format_string($tracks[$submission->trackid]->name) : '';
+        return isset($tracks[$submission->trackid]) ? self::attribute_safe_text($tracks[$submission->trackid]->name) : '';
+    }
+
+    /**
+     * format_string() without its own '&' escaping, then s(): plain text that is safe
+     * both as element content and inside a double- or single-quoted attribute.
+     * format_string() alone leaves quotes as they are.
+     *
+     * @param string|null $text Text a presenter (or a confsubmissions organiser) typed
+     * @return string
+     */
+    private static function attribute_safe_text(?string $text): string {
+        return s(format_string((string) $text, true, ['escape' => false]));
     }
 
     /**

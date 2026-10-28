@@ -108,7 +108,7 @@ final class placeholder_test extends advanced_testcase {
     public function test_build_context_escapes_user_supplied_text(): void {
         $this->resetAfterTest();
 
-        $course = $this->getDataGenerator()->create_course();
+        $course = $this->getDataGenerator()->create_course(['summary' => '']);
         // A confprogramcmid-less confcheckin (unset here) means build_context() never
         // actually looks up a presenter submission, but it still reads $confcheckin->id
         // (to look up this template type's own presentationinfoformat) and $user->id
@@ -137,7 +137,7 @@ final class placeholder_test extends advanced_testcase {
     public function test_build_context_includes_course_fields(): void {
         $this->resetAfterTest();
 
-        $course = $this->getDataGenerator()->create_course(['fullname' => 'My Course', 'shortname' => 'MC101']);
+        $course = $this->getDataGenerator()->create_course(['fullname' => 'My Course', 'shortname' => 'MC101', 'summary' => '']);
         $confcheckin = (object) ['id' => 0, 'name' => 'My Conf', 'course' => $course->id];
         $tickettype = (object) ['name' => 'General', 'price' => '0.00', 'currency' => 'USD'];
         $ticket = (object) ['origin' => 'free', 'qrtoken' => 'abc123'];
@@ -157,7 +157,7 @@ final class placeholder_test extends advanced_testcase {
     public function test_build_context_includes_cost_field(): void {
         $this->resetAfterTest();
 
-        $course = $this->getDataGenerator()->create_course();
+        $course = $this->getDataGenerator()->create_course(['summary' => '']);
         $confcheckin = (object) ['id' => 0, 'name' => 'My Conf', 'course' => $course->id];
         $tickettype = (object) ['name' => 'Presenter', 'price' => '25.00', 'currency' => 'USD'];
         $ticket = (object) ['origin' => 'free', 'qrtoken' => 'abc123'];
@@ -195,7 +195,7 @@ final class placeholder_test extends advanced_testcase {
         $this->resetAfterTest();
         global $DB;
 
-        $course = $this->getDataGenerator()->create_course();
+        $course = $this->getDataGenerator()->create_course(['summary' => '']);
 
         $confsubmissions = $this->getDataGenerator()->create_module('confsubmissions', ['course' => $course->id]);
         $confsubmissionscm = get_coursemodule_from_instance('confsubmissions', $confsubmissions->id);
@@ -216,7 +216,8 @@ final class placeholder_test extends advanced_testcase {
         $submissionid = (int) $DB->insert_record('confsubmissions_submission', (object) [
             'confsubmissions' => $confsubmissions->id,
             'userid'          => $presenter->id,
-            'title'           => 'My Great Talk',
+            // The quotes check build_context()'s attribute-safe escaping of presenter text.
+            'title'           => 'My "Great" Talk',
             'abstract'        => 'An abstract.',
             'trackid'         => $trackid,
             'status'          => 'submitted',
@@ -242,12 +243,12 @@ final class placeholder_test extends advanced_testcase {
 
         $presenterticket = ticket_service::issue_free_ticket((int) $confcheckin->id, $tickettypeid, (int) $presenter->id);
         $context = placeholder::build_context($confcheckin, $tickettype, $presenterticket, $presenter, 'badge');
-        $this->assertSame('My Great Talk', $context['submissiontitle']);
+        $this->assertSame('My &quot;Great&quot; Talk', $context['submissiontitle']);
         $this->assertSame('Security', $context['track']);
         // Default presentationinfo format is just the title (see
         // placeholder::DEFAULT_PRESENTATIONINFO_FORMAT's docblock for why track is
         // deliberately excluded from the default).
-        $this->assertSame('My Great Talk', $context['presentationinfo']);
+        $this->assertSame('My &quot;Great&quot; Talk', $context['presentationinfo']);
 
         $bystander = $this->getDataGenerator()->create_user();
         $bystanderticket = ticket_service::issue_free_ticket((int) $confcheckin->id, $tickettypeid, (int) $bystander->id);
@@ -267,7 +268,7 @@ final class placeholder_test extends advanced_testcase {
         $this->resetAfterTest();
         global $DB;
 
-        $course = $this->getDataGenerator()->create_course();
+        $course = $this->getDataGenerator()->create_course(['summary' => '']);
         $confsubmissions = $this->getDataGenerator()->create_module('confsubmissions', ['course' => $course->id]);
         $confsubmissionscm = get_coursemodule_from_instance('confsubmissions', $confsubmissions->id);
         $trackid = \mod_confsubmissions\api::add_track((int) $confsubmissions->id, 'Security');
