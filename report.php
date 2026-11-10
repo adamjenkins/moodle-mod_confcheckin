@@ -79,6 +79,14 @@ $PAGE->set_context($context);
 
 $cantogglecheckin = has_capability('mod/confcheckin:scancheckin', $context);
 
+// Group mode (security audit 2026-10-28, F7): in separate groups, a viewer without
+// moodle/site:accessallgroups sees (and can toggle) only the members of their own
+// group(s), as in core reports. The default viewers (editing teachers, managers)
+// hold accessallgroups, so for them nothing changes.
+$groupmode = groups_get_activity_groupmode($cm);
+$currentgroup = groups_get_activity_group($cm, true);
+$grouprestricted = $groupmode == SEPARATEGROUPS && !has_capability('moodle/site:accessallgroups', $context);
+
 if ($toggleticketid) {
     require_capability('mod/confcheckin:scancheckin', $context);
     require_sesskey();
@@ -87,7 +95,7 @@ if ($toggleticketid) {
     // -- see this file's own docblock/RELATIONS.md for why every id-taking entry
     // point in this project does this.
     $ticket = $DB->get_record('confcheckin_ticket', ['id' => $toggleticketid, 'confcheckin' => $confcheckin->id]);
-    if (!$ticket) {
+    if (!$ticket || ($grouprestricted && (!$currentgroup || !groups_is_member($currentgroup, (int) $ticket->userid)))) {
         throw new \moodle_exception('error:invalidticket', 'confcheckin');
     }
 
@@ -100,14 +108,31 @@ echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('checkinreport', 'confcheckin'), $PAGE->activityheader->get_heading_level());
 echo html_writer::tag('p', get_string('checkinreport_help', 'confcheckin'));
 
+groups_print_activity_menu($cm, $pageurl);
+
+if ($grouprestricted && !$currentgroup) {
+    echo $OUTPUT->notification(get_string('notingroup'), 'info');
+    echo $OUTPUT->footer();
+    exit;
+}
+
 $coursecontext = context_course::instance($course->id);
-// onlyactive => true: a suspended enrolment shouldn't appear as "hasn't checked
+// With onlyactive => true, a suspended enrolment shouldn't appear as "hasn't checked
 // in yet" alongside people who are actually expected to attend. Only id, name
 // fields and email are selected -- u.* fetched every column of every enrolled
 // user into memory, a multi-MB page on conference-sized open courses
 // (FABLE.md review, 2026-07-09).
 $reportfields = 'u.id, u.email, u.' . implode(', u.', \core_user\fields::for_name()->get_required_fields());
-$enrolledusers = get_enrolled_users($coursecontext, '', 0, $reportfields, 'u.lastname, u.firstname', 0, 0, true);
+$enrolledusers = get_enrolled_users(
+    $coursecontext,
+    '',
+    $currentgroup ?: 0,
+    $reportfields,
+    'u.lastname, u.firstname',
+    0,
+    0,
+    true
+);
 
 $ticketsbyuser = checkin_service::get_tickets_by_user((int) $confcheckin->id);
 
@@ -152,7 +177,9 @@ foreach ($enrolledusers as $user) {
     $tickets = $ticketsbyuser[(int) $user->id] ?? [];
 
     $profileurl = new moodle_url('/user/view.php', ['id' => $user->id, 'course' => $course->id]);
-    $namecell = new html_table_cell(html_writer::link($profileurl, fullname($user)));
+    // Escaped for defence in depth: names are PARAM_NOTAGS on input, but nothing
+    // here should rely on that (security audit 2026-10-28, F7).
+    $namecell = new html_table_cell(html_writer::link($profileurl, s(fullname($user))));
     $namecell->attributes['data-column'] = 'fullname';
     $namecell->attributes['data-sort-value'] = fullname($user);
 

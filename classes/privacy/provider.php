@@ -53,16 +53,171 @@ use core_privacy\local\request\writer;
  * treatment Moodle core gives similar "who did this action to someone else's
  * record" columns, e.g. grade history) rather than the scanning user's own
  * personal data to purge on request. This is a known, documented limitation (see
- * RELATIONS.md), not an oversight.
+ * RELATIONS.md), not an oversight. The security audit of 2026-10-28 (F9) reviewed
+ * this retention and it is kept as designed.
+ *
+ * Ticket payments (core_payment's {payments} rows with component mod_confcheckin,
+ * paymentarea 'tickettype', itemid = confcheckin_tickettype.id) are exported and
+ * deleted through \core_payment\privacy\consumer_provider (security audit
+ * 2026-10-28, F5), the same way enrol_fee handles its own payments. core_payment's
+ * provider calls the request methods below again with its own contextlist or
+ * userlist (component 'core_payment'); when it does, these methods handle only the
+ * payment rows and leave the ticket data to this plugin's own call.
  *
  * @package    mod_confcheckin
+ * @copyright  2020 Shamim Rezaie <shamim@moodle.com>
  * @copyright  2026 Adam Jenkins <adam@wisecat.net>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class provider implements
+    \core_payment\privacy\consumer_provider,
     \core_privacy\local\metadata\provider,
     \core_privacy\local\request\core_userlist_provider,
     \core_privacy\local\request\plugin\provider {
+    /** Payment area this plugin uses with core_payment. */
+    private const PAYMENTAREA = 'tickettype';
+
+    /**
+     * Returns the context id a ticket payment belongs to: the module context of the
+     * ticket type's activity, or null when the ticket type no longer exists (core
+     * then files the payment under the system context).
+     *
+     * @param string $paymentarea Payment area
+     * @param int $itemid The confcheckin_tickettype id
+     * @return int|null
+     */
+    public static function get_contextid_for_payment(string $paymentarea, int $itemid): ?int {
+        global $DB;
+
+        if ($paymentarea !== self::PAYMENTAREA) {
+            return null;
+        }
+
+        $sql = "SELECT ctx.id
+                  FROM {confcheckin_tickettype} tt
+                  JOIN {course_modules} cm ON cm.instance = tt.confcheckin
+                  JOIN {modules} m ON m.id = cm.module AND m.name = 'confcheckin'
+                  JOIN {context} ctx ON ctx.instanceid = cm.id AND ctx.contextlevel = :contextlevel
+                 WHERE tt.id = :itemid";
+        $contextid = $DB->get_field_sql($sql, ['contextlevel' => CONTEXT_MODULE, 'itemid' => $itemid]);
+
+        return $contextid ? (int) $contextid : null;
+    }
+
+    /**
+     * SQL selecting the ids of this plugin's payments that belong to a context: the
+     * activity's ticket types for a module context, or payments whose ticket type no
+     * longer exists for the system context.
+     *
+     * @param \context $context The context
+     * @return array|null [$sql, $params], or null when the context holds none of this plugin's payments
+     */
+    private static function get_payment_sql_for_context(\context $context): ?array {
+        $params = ['component' => 'mod_confcheckin', 'paymentarea' => self::PAYMENTAREA];
+
+        if ($context instanceof \context_module) {
+            $cm = get_coursemodule_from_id('confcheckin', $context->instanceid);
+            if (!$cm) {
+                return null;
+            }
+            $sql = "SELECT p.id
+                      FROM {payments} p
+                      JOIN {confcheckin_tickettype} tt ON tt.id = p.itemid
+                     WHERE p.component = :component AND p.paymentarea = :paymentarea
+                           AND tt.confcheckin = :confcheckin";
+            $params['confcheckin'] = $cm->instance;
+            return [$sql, $params];
+        }
+
+        if ($context instanceof \context_system) {
+            $sql = "SELECT p.id
+                      FROM {payments} p
+                 LEFT JOIN {confcheckin_tickettype} tt ON tt.id = p.itemid
+                     WHERE p.component = :component AND p.paymentarea = :paymentarea AND tt.id IS NULL";
+            return [$sql, $params];
+        }
+
+        return null;
+    }
+
+    /**
+     * Adds the users with ticket payments in the userlist's context.
+     *
+     * @param userlist $userlist
+     * @return void
+     */
+    private static function add_payment_users(userlist $userlist): void {
+        $paymentsql = self::get_payment_sql_for_context($userlist->get_context());
+        if ($paymentsql === null) {
+            return;
+        }
+        [$sql, $params] = $paymentsql;
+
+        $userlist->add_from_sql('userid', "SELECT userid FROM {payments} WHERE id IN ($sql)", $params);
+    }
+
+    /**
+     * Exports the user's ticket payments in each approved context.
+     *
+     * @param approved_contextlist $contextlist
+     * @return void
+     */
+    private static function export_payments(approved_contextlist $contextlist): void {
+        global $DB;
+
+        $userid = (int) $contextlist->get_user()->id;
+        $subcontext = [get_string('privacy:path:payments', 'confcheckin')];
+
+        foreach ($contextlist->get_contexts() as $context) {
+            $paymentsql = self::get_payment_sql_for_context($context);
+            if ($paymentsql === null) {
+                continue;
+            }
+            [$sql, $params] = $paymentsql;
+            $params['userid'] = $userid;
+
+            $itemids = $DB->get_fieldset_sql(
+                "SELECT DISTINCT itemid FROM {payments} WHERE id IN ($sql) AND userid = :userid",
+                $params
+            );
+            foreach ($itemids as $itemid) {
+                \core_payment\privacy\provider::export_payment_data_for_user_in_context(
+                    $context,
+                    $subcontext,
+                    $userid,
+                    'mod_confcheckin',
+                    self::PAYMENTAREA,
+                    (int) $itemid
+                );
+            }
+        }
+    }
+
+    /**
+     * Deletes ticket payments in a context, optionally only those of some users.
+     *
+     * @param \context $context The context
+     * @param int[]|null $userids Only these users' payments, or null for everyone's
+     * @return void
+     */
+    private static function delete_payments(\context $context, ?array $userids = null): void {
+        global $DB;
+
+        $paymentsql = self::get_payment_sql_for_context($context);
+        if ($paymentsql === null || $userids === []) {
+            return;
+        }
+        [$sql, $params] = $paymentsql;
+
+        if ($userids !== null) {
+            [$usersql, $userparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'payuser');
+            $sql = "SELECT id FROM {payments} WHERE id IN ($sql) AND userid $usersql";
+            $params += $userparams;
+        }
+
+        \core_payment\privacy\provider::delete_data_for_payment_sql($sql, $params);
+    }
+
     /**
      * Returns metadata describing the personal data stored by this plugin.
      *
@@ -85,6 +240,8 @@ class provider implements
             'scannedby'   => 'privacy:metadata:confcheckin_checkin:scannedby',
             'timecreated' => 'privacy:metadata:confcheckin_checkin:timecreated',
         ], 'privacy:metadata:confcheckin_checkin');
+
+        $collection->add_subsystem_link('core_payment', [], 'privacy:metadata:core_payment');
 
         return $collection;
     }
@@ -129,6 +286,11 @@ class provider implements
      * @param userlist $userlist
      */
     public static function get_users_in_context(userlist $userlist): void {
+        if ($userlist->get_component() === 'core_payment') {
+            self::add_payment_users($userlist);
+            return;
+        }
+
         $context = $userlist->get_context();
 
         if (!$context instanceof \context_module) {
@@ -166,6 +328,11 @@ class provider implements
      */
     public static function export_user_data(approved_contextlist $contextlist): void {
         global $DB;
+
+        if ($contextlist->get_component() === 'core_payment') {
+            self::export_payments($contextlist);
+            return;
+        }
 
         $user = $contextlist->get_user();
 
@@ -253,6 +420,10 @@ class provider implements
     public static function delete_data_for_all_users_in_context(\context $context): void {
         global $DB;
 
+        // This method gets no component, so both this plugin's call and
+        // core_payment's call remove the payments as well; doing it twice is harmless.
+        self::delete_payments($context);
+
         if (!$context instanceof \context_module) {
             return;
         }
@@ -297,6 +468,13 @@ class provider implements
 
         $user = $contextlist->get_user();
 
+        if ($contextlist->get_component() === 'core_payment') {
+            foreach ($contextlist->get_contexts() as $context) {
+                self::delete_payments($context, [(int) $user->id]);
+            }
+            return;
+        }
+
         foreach ($contextlist->get_contexts() as $context) {
             if (!$context instanceof \context_module) {
                 continue;
@@ -338,6 +516,11 @@ class provider implements
      */
     public static function delete_data_for_users(approved_userlist $userlist): void {
         global $DB;
+
+        if ($userlist->get_component() === 'core_payment') {
+            self::delete_payments($userlist->get_context(), array_map('intval', $userlist->get_userids()));
+            return;
+        }
 
         $context = $userlist->get_context();
         if (!$context instanceof \context_module) {

@@ -44,6 +44,9 @@ class mod_confcheckin_mod_form extends moodleform_mod {
     /** @var int[] Valid confprogramcmid option keys (course_module ids in this course), set by definition(). */
     protected $confprogramcmids = [];
 
+    /** @var int[] Payment account ids offered by get_payment_accounts_menu() for this context, set by definition(). */
+    protected $paymentaccountids = [];
+
     /**
      * Defines the form fields.
      */
@@ -99,6 +102,7 @@ class mod_confcheckin_mod_form extends moodleform_mod {
         // "no accounts configured yet" static-text fallback enrol_fee's edit_instance_form()
         // uses.
         $accounts = \core_payment\helper::get_payment_accounts_menu($this->get_context());
+        $this->paymentaccountids = array_map('intval', array_keys($accounts));
         if ($accounts) {
             $accounts = [0 => get_string('none')] + $accounts;
             $mform->addElement('select', 'paymentaccountid', get_string('paymentaccountid', 'confcheckin'), $accounts);
@@ -112,6 +116,9 @@ class mod_confcheckin_mod_form extends moodleform_mod {
             );
             $mform->addElement('hidden', 'paymentaccountid', 0);
             $mform->setType('paymentaccountid', PARAM_INT);
+            // No account is offered here, so none may be submitted: a hidden field
+            // is client-editable (security audit 2026-10-28, F2).
+            $mform->setConstant('paymentaccountid', 0);
         }
         // The help icon must attach to whichever element is actually VISIBLE in this
         // branch -- attached to the hidden 'paymentaccountid' it silently never
@@ -146,6 +153,16 @@ class mod_confcheckin_mod_form extends moodleform_mod {
             // offered (e.g. a confprogram activity in an unrelated course), since
             // classes/local/eligibility.php trusts confcheckin.confprogramcmid implicitly.
             $errors['confprogramcmid'] = get_string('error:invalidconfprogramcmid', 'confcheckin');
+        }
+
+        if (
+            !empty($data['paymentaccountid'])
+                && !in_array((int) $data['paymentaccountid'], $this->paymentaccountids, true)
+        ) {
+            // Same rule for the payment account: only an account
+            // get_payment_accounts_menu() offered for this context is accepted, since
+            // classes/payment/service_provider.php routes payments to it.
+            $errors['paymentaccountid'] = get_string('error:invalidpaymentaccount', 'confcheckin');
         }
 
         return $errors;

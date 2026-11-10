@@ -69,6 +69,17 @@ class ticket_service {
     private const LOCKING_DBFAMILIES = ['mysql', 'postgres'];
 
     /**
+     * Number of wrong promo codes one user may enter for one activity before
+     * redemption is locked for that user and activity.
+     */
+    public const PROMO_MAX_FAILURES = 10;
+
+    /**
+     * How long (seconds) the failure count is kept, and how long a lockout lasts.
+     */
+    public const PROMO_LOCKOUT_SECONDS = 900;
+
+    /**
      * Generates a unique, cryptographically-random qrtoken for a new ticket.
      *
      * Uses random_bytes() (a CSPRNG) hex-encoded to exactly 64 characters, matching
@@ -151,10 +162,22 @@ class ticket_service {
     public static function redeem_promocode(int $confcheckinid, string $code, int $userid): \stdClass {
         global $DB;
 
+        // Attempt throttle (security audit 2026-10-28, F4): organiser-chosen codes
+        // can be short, so unlimited guesses could find one. After
+        // PROMO_MAX_FAILURES wrong codes this user is locked out of redemption in
+        // this activity for PROMO_LOCKOUT_SECONDS, valid codes included.
+        $remaining = self::get_promo_lockout_remaining($confcheckinid, $userid);
+        if ($remaining > 0) {
+            throw new \moodle_exception('error:promocodelocked', 'confcheckin', '', (int) ceil($remaining / 60));
+        }
+
         $transaction = $DB->start_delegated_transaction();
         try {
             $promocode = self::lock_promocode_by_code($confcheckinid, $code);
             if ($promocode === null) {
+                // The cache is not part of the DB transaction, so recording the
+                // failure here survives the rollback below.
+                self::record_failed_promo_attempt($confcheckinid, $userid);
                 // Same message whether the code plainly doesn't exist or belongs to a
                 // different instance -- no enumeration oracle for guessing codes across
                 // instances.
@@ -199,6 +222,109 @@ class ticket_service {
             return $ticket;
         } catch (\Throwable $e) {
             $transaction->rollback($e);
+        }
+    }
+
+    /**
+     * How many seconds remain of this user's promo-code lockout in this activity,
+     * or 0 if they are not locked out.
+     *
+     * @param int $confcheckinid The confcheckin instance id
+     * @param int $userid The user id
+     * @param int|null $now Unix timestamp to check against; null means the real current time
+     * @return int Seconds remaining, 0 when not locked out
+     */
+    public static function get_promo_lockout_remaining(int $confcheckinid, int $userid, ?int $now = null): int {
+        $now = $now ?? time();
+        $entry = self::promo_attempts_cache()->get(self::promo_attempts_key($confcheckinid, $userid));
+        if (!is_array($entry) || empty($entry['lockeduntil']) || (int) $entry['lockeduntil'] <= $now) {
+            return 0;
+        }
+
+        return (int) $entry['lockeduntil'] - $now;
+    }
+
+    /**
+     * Counts one wrong promo code for this user in this activity, and starts a
+     * lockout once PROMO_MAX_FAILURES is reached. The count starts again when the
+     * previous window (or lockout) has ended.
+     *
+     * @param int $confcheckinid The confcheckin instance id
+     * @param int $userid The user id
+     * @param int|null $now Unix timestamp; null means the real current time
+     * @return void
+     */
+    public static function record_failed_promo_attempt(int $confcheckinid, int $userid, ?int $now = null): void {
+        $now = $now ?? time();
+        $cache = self::promo_attempts_cache();
+        $key = self::promo_attempts_key($confcheckinid, $userid);
+
+        $entry = $cache->get($key);
+        $expired = !is_array($entry)
+            || (!empty($entry['lockeduntil']) && (int) $entry['lockeduntil'] <= $now)
+            || (empty($entry['lockeduntil']) && $now - (int) $entry['since'] >= self::PROMO_LOCKOUT_SECONDS);
+        if ($expired) {
+            $entry = ['count' => 0, 'since' => $now, 'lockeduntil' => 0];
+        }
+
+        $entry['count'] = (int) $entry['count'] + 1;
+        if ($entry['count'] >= self::PROMO_MAX_FAILURES && empty($entry['lockeduntil'])) {
+            $entry['lockeduntil'] = $now + self::PROMO_LOCKOUT_SECONDS;
+        }
+
+        $cache->set($key, $entry);
+    }
+
+    /**
+     * The application cache holding the wrong-promo-code counts (db/caches.php).
+     *
+     * @return \cache
+     */
+    private static function promo_attempts_cache(): \cache {
+        return \cache::make('mod_confcheckin', 'promoattempts');
+    }
+
+    /**
+     * Cache key for one user in one activity (simplekeys: a-z, 0-9 and _ only).
+     *
+     * @param int $confcheckinid The confcheckin instance id
+     * @param int $userid The user id
+     * @return string
+     */
+    private static function promo_attempts_key(int $confcheckinid, int $userid): string {
+        return 'u' . $userid . '_c' . $confcheckinid;
+    }
+
+    /**
+     * Runs the delivery-time gates of issue_purchased_ticket() BEFORE a checkout
+     * starts (security audit 2026-10-28, F3), so a buyer is not charged for a ticket
+     * that deliver_order() would then refuse. Called from
+     * \mod_confcheckin\payment\service_provider::get_payable(). Unlocked and
+     * read-only: issue_purchased_ticket() repeats every check under the row lock
+     * at delivery time, which still covers the case where the last seat sells
+     * while the buyer is paying.
+     *
+     * @param int $confcheckinid The confcheckin instance id
+     * @param \stdClass $tickettype The confcheckin_tickettype record being bought
+     * @param int $userid The paying user
+     * @return void
+     * @throws \moodle_exception if the type is hidden or in another instance, the user is
+     *         not eligible, the availability window is closed, the user already holds
+     *         maxperuser tickets of this type, or the type is sold out
+     */
+    public static function require_can_start_purchase(int $confcheckinid, \stdClass $tickettype, int $userid): void {
+        if ((int) $tickettype->confcheckin !== $confcheckinid || empty($tickettype->visible)) {
+            throw new \moodle_exception('error:invalidtickettype', 'confcheckin');
+        }
+
+        self::require_eligible($confcheckinid, $tickettype, $userid);
+
+        if (self::has_reached_maxperuser_for_display($tickettype, $userid)) {
+            throw new \moodle_exception('error:maxperuserexceeded', 'confcheckin');
+        }
+
+        if (!self::has_capacity_for_display($tickettype)) {
+            throw new \moodle_exception('error:tickettypesoldout', 'confcheckin');
         }
     }
 
@@ -809,8 +935,7 @@ class ticket_service {
             try {
                 groups_add_member($addtogroupid, $userid);
             } catch (\Throwable $e) {
-                // phpcs:ignore moodle.PHP.ForbiddenFunctions.FoundWithAlternative
-                error_log('mod_confcheckin addtogroupid group-add failed: ' . $e->getMessage());
+                debugging('mod_confcheckin addtogroupid group-add failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
             }
         }
 

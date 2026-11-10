@@ -183,4 +183,134 @@ final class provider_test extends advanced_testcase {
         $this->assertSame(0, $DB->count_records('confcheckin_ticket', ['confcheckin' => $confcheckin->id]));
         $this->assertSame(0, $DB->count_records('confcheckin_checkin'));
     }
+
+    /**
+     * Creates a ticket payment by $attendee for the fixture's ticket type, plus one by
+     * another user, and returns [$paymentid, $otherpaymentid, $otheruser].
+     *
+     * @param \stdClass $confcheckin
+     * @param \stdClass $attendee
+     * @return array{0: int, 1: int, 2: \stdClass}
+     */
+    private function create_payments(\stdClass $confcheckin, \stdClass $attendee): array {
+        global $DB;
+
+        $paymentgenerator = $this->getDataGenerator()->get_plugin_generator('core_payment');
+        $account = $paymentgenerator->create_payment_account(['gateways' => 'paypal']);
+        $tickettypeid = (int) $DB->get_field('confcheckin_tickettype', 'id', ['confcheckin' => $confcheckin->id]);
+        $otheruser = $this->getDataGenerator()->create_user();
+
+        $record = [
+            'accountid'   => $account->get('id'),
+            'amount'      => 10,
+            'component'   => 'mod_confcheckin',
+            'paymentarea' => 'tickettype',
+            'itemid'      => $tickettypeid,
+        ];
+        $paymentid = $paymentgenerator->create_payment($record + ['userid' => $attendee->id]);
+        $otherpaymentid = $paymentgenerator->create_payment($record + ['userid' => $otheruser->id]);
+        // The generator's payments use the PayPal gateway, whose privacy export reads its own order row.
+        foreach ([$paymentid, $otherpaymentid] as $id) {
+            $DB->insert_record('paygw_paypal', ['paymentid' => $id, 'pp_orderid' => 'TEST-' . $id]);
+        }
+
+        return [$paymentid, $otherpaymentid, $otheruser];
+    }
+
+    /**
+     * Ticket payments map to the activity's context, so core_payment's own
+     * get_contexts_for_userid() reports it (security audit 2026-10-28, F5).
+     */
+    public function test_payment_context_is_the_activity(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        [$context, $confcheckin, $attendee] = $this->create_checked_in_fixture();
+        $this->create_payments($confcheckin, $attendee);
+        $tickettypeid = (int) $DB->get_field('confcheckin_tickettype', 'id', ['confcheckin' => $confcheckin->id]);
+
+        $this->assertSame((int) $context->id, provider::get_contextid_for_payment('tickettype', $tickettypeid));
+        $this->assertNull(provider::get_contextid_for_payment('tickettype', 999999));
+        $this->assertNull(provider::get_contextid_for_payment('otherarea', $tickettypeid));
+
+        $contextlist = \core_payment\privacy\provider::get_contexts_for_userid((int) $attendee->id);
+        $this->assertContains((int) $context->id, array_map('intval', $contextlist->get_contextids()));
+    }
+
+    /**
+     * Called by core_payment, export_user_data() exports the user's payment; the
+     * ticket data is left to this plugin's own call.
+     */
+    public function test_export_payment_data(): void {
+        $this->resetAfterTest();
+
+        [$context, $confcheckin, $attendee] = $this->create_checked_in_fixture();
+        [$paymentid] = $this->create_payments($confcheckin, $attendee);
+
+        provider::export_user_data(new approved_contextlist($attendee, 'core_payment', [$context->id]));
+
+        $data = writer::with_context($context)->get_data([
+            get_string('payments', 'payment'),
+            get_string('privacy:path:payments', 'confcheckin'),
+            'payment-' . $paymentid,
+        ]);
+        $this->assertNotEmpty($data);
+        $ticketkey = get_string('privacy:metadata:confcheckin_ticket', 'confcheckin');
+        $this->assertEmpty(writer::with_context($context)->get_data([$ticketkey]));
+    }
+
+    /**
+     * Called by core_payment, the userlist gets the payers, and deleting one user
+     * removes only that user's payment and leaves the ticket alone.
+     */
+    public function test_delete_payment_data_for_user(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        [$context, $confcheckin, $attendee] = $this->create_checked_in_fixture();
+        [$paymentid, $otherpaymentid, $otheruser] = $this->create_payments($confcheckin, $attendee);
+
+        $userlist = new \core_privacy\local\request\userlist($context, 'core_payment');
+        provider::get_users_in_context($userlist);
+        $userids = array_map('intval', $userlist->get_userids());
+        sort($userids);
+        $expected = [(int) $attendee->id, (int) $otheruser->id];
+        sort($expected);
+        $this->assertSame($expected, $userids);
+
+        provider::delete_data_for_user(new approved_contextlist($attendee, 'core_payment', [$context->id]));
+
+        $this->assertFalse($DB->record_exists('payments', ['id' => $paymentid]));
+        $this->assertTrue($DB->record_exists('payments', ['id' => $otherpaymentid]));
+        $this->assertSame(1, $DB->count_records('confcheckin_ticket', ['userid' => $attendee->id]));
+
+        $approveduserlist = new \core_privacy\local\request\approved_userlist($context, 'core_payment', [$otheruser->id]);
+        provider::delete_data_for_users($approveduserlist);
+        $this->assertFalse($DB->record_exists('payments', ['id' => $otherpaymentid]));
+    }
+
+    /**
+     * Deleting the whole activity context removes its ticket payments too.
+     */
+    public function test_delete_all_users_removes_payments(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        [$context, $confcheckin, $attendee] = $this->create_checked_in_fixture();
+        $this->create_payments($confcheckin, $attendee);
+
+        provider::delete_data_for_all_users_in_context($context);
+
+        $this->assertSame(0, $DB->count_records('payments', ['component' => 'mod_confcheckin']));
+    }
+
+    /**
+     * Metadata declares the link to the payment subsystem.
+     */
+    public function test_metadata_links_core_payment(): void {
+        $collection = provider::get_metadata(new \core_privacy\local\metadata\collection('mod_confcheckin'));
+
+        $names = array_map(fn($item) => $item->get_name(), $collection->get_collection());
+        $this->assertContains('core_payment', $names);
+    }
 }

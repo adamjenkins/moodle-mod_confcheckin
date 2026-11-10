@@ -34,10 +34,10 @@
  * eligibilityenrolid reference course-level groups/enrolment methods -- see
  * restore_confcheckin_stepslib.php's docblock for why all of these are resolved in
  * after_restore(), not here or in restore's own process_*() methods. paymentaccountid
- * (a core_payment account id) is NOT remapped at all -- core_payment accounts are a
- * site-level concept, not scoped per course, so the same account id is valid on the
- * destination site too (or, if it no longer exists, core_payment's own checkout already
- * handles a missing/invalid account gracefully -- nothing here needs to duplicate that).
+ * (a core_payment account id) is NOT remapped -- core_payment accounts live in the
+ * system or a category context, outside any course backup. The restore step keeps
+ * the id only on a same-site restore into a course that can use that account, and
+ * clears it otherwise (security audit 2026-10-28, F2).
  *
  * No persistent file storage exists for generated badge/ticket/receipt/certificate
  * PDFs (see pdf_generator.php -- they are rendered on demand, never saved), so this

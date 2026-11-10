@@ -205,4 +205,92 @@ final class service_provider_test extends advanced_testcase {
         $this->assertFalse($result);
         $this->assertEquals(0, $DB->count_records('confcheckin_ticket', ['tickettypeid' => $tickettypeid]));
     }
+
+    /**
+     * get_payable() refuses to start a checkout that delivery would refuse
+     * (security audit 2026-10-28, F3): a hidden type, and a sold-out type.
+     */
+    public function test_get_payable_refuses_before_checkout_when_delivery_would_fail(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        [$confcheckin, $tickettypeid] = $this->create_fixture();
+        $course = get_course($confcheckin->course);
+        $buyer = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $this->setUser($buyer);
+
+        $DB->set_field('confcheckin_tickettype', 'visible', 0, ['id' => $tickettypeid]);
+        try {
+            service_provider::get_payable('tickettype', $tickettypeid);
+            $this->fail('A hidden ticket type must not be payable');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:invalidtickettype', $e->errorcode);
+        }
+
+        $DB->set_field('confcheckin_tickettype', 'visible', 1, ['id' => $tickettypeid]);
+        $DB->set_field('confcheckin_tickettype', 'capacity', 1, ['id' => $tickettypeid]);
+        $DB->set_field('confcheckin_tickettype', 'soldcount', 1, ['id' => $tickettypeid]);
+        try {
+            service_provider::get_payable('tickettype', $tickettypeid);
+            $this->fail('A sold-out ticket type must not be payable');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:tickettypesoldout', $e->errorcode);
+        }
+    }
+
+    /**
+     * get_payable() refuses an account from a context this course is not under
+     * (security audit 2026-10-28, F2), such as another category's account.
+     */
+    public function test_get_payable_refuses_account_from_other_category(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        [$confcheckin, $tickettypeid] = $this->create_fixture();
+        $othercategory = $this->getDataGenerator()->create_category();
+        $otheraccount = $this->getDataGenerator()->get_plugin_generator('core_payment')->create_payment_account([
+            'gateways'  => 'paypal',
+            'contextid' => \context_coursecat::instance($othercategory->id)->id,
+        ]);
+        $DB->set_field('confcheckin', 'paymentaccountid', $otheraccount->get('id'), ['id' => $confcheckin->id]);
+
+        $course = get_course($confcheckin->course);
+        $buyer = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $this->setUser($buyer);
+
+        try {
+            service_provider::get_payable('tickettype', $tickettypeid);
+            $this->fail('An account from another category must not be used');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:nopaymentaccount', $e->errorcode);
+        }
+    }
+
+    /**
+     * is_account_usable_in_context() accepts a system account and a parent-category
+     * account, and refuses a missing account and another category's account.
+     */
+    public function test_is_account_usable_in_context(): void {
+        $this->resetAfterTest();
+
+        $category = $this->getDataGenerator()->create_category();
+        $othercategory = $this->getDataGenerator()->create_category();
+        $course = $this->getDataGenerator()->create_course(['category' => $category->id]);
+        $context = \context_course::instance($course->id);
+        $paymentgenerator = $this->getDataGenerator()->get_plugin_generator('core_payment');
+
+        $systemaccount = $paymentgenerator->create_payment_account();
+        $categoryaccount = $paymentgenerator->create_payment_account([
+            'contextid' => \context_coursecat::instance($category->id)->id,
+        ]);
+        $otheraccount = $paymentgenerator->create_payment_account([
+            'contextid' => \context_coursecat::instance($othercategory->id)->id,
+        ]);
+
+        $this->assertTrue(service_provider::is_account_usable_in_context((int) $systemaccount->get('id'), $context));
+        $this->assertTrue(service_provider::is_account_usable_in_context((int) $categoryaccount->get('id'), $context));
+        $this->assertFalse(service_provider::is_account_usable_in_context((int) $otheraccount->get('id'), $context));
+        $this->assertFalse(service_provider::is_account_usable_in_context(0, $context));
+        $this->assertFalse(service_provider::is_account_usable_in_context(999999, $context));
+    }
 }

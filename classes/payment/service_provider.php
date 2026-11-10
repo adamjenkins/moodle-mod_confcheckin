@@ -78,6 +78,8 @@ class service_provider implements \core_payment\local\callback\service_provider 
      * @return \core_payment\local\entities\payable
      */
     public static function get_payable(string $paymentarea, int $itemid): \core_payment\local\entities\payable {
+        global $USER;
+
         [$tickettype, $confcheckin] = self::get_tickettype_and_instance($paymentarea, $itemid);
 
         // A ticket type with a nonzero price but no configured payment account is a
@@ -101,11 +103,50 @@ class service_provider implements \core_payment\local\callback\service_provider 
         $context = \context_module::instance($cm->id);
         require_capability('mod/confcheckin:purchase', $context);
 
+        // The account must be one this course can actually use: an account in a
+        // context above this activity (system or a parent category), the same set
+        // \core_payment\helper::get_payment_accounts_menu() offers in mod_form.php.
+        // A crafted form post or a restore from another site could otherwise route
+        // the money to an unrelated account (security audit 2026-10-28, F2).
+        if (!self::is_account_usable_in_context((int) $confcheckin->paymentaccountid, $context)) {
+            throw new \moodle_exception('error:nopaymentaccount', 'confcheckin');
+        }
+
+        // Run the delivery-time gates now, before any money moves, so a buyer is
+        // not charged for a ticket deliver_order() would refuse (security audit
+        // 2026-10-28, F3). issue_purchased_ticket() repeats them under the row
+        // lock at delivery.
+        ticket_service::require_can_start_purchase((int) $confcheckin->id, $tickettype, (int) $USER->id);
+
         return new \core_payment\local\entities\payable(
             (float) $tickettype->price,
             $tickettype->currency,
             (int) $confcheckin->paymentaccountid
         );
+    }
+
+    /**
+     * Whether a payment account exists, is not archived, and belongs to a context at
+     * or above the given one (the accounts core_payment would offer there).
+     *
+     * @param int $accountid The core_payment account id
+     * @param \context $context The activity (or course) context
+     * @return bool
+     */
+    public static function is_account_usable_in_context(int $accountid, \context $context): bool {
+        if ($accountid <= 0) {
+            return false;
+        }
+
+        $account = \core_payment\account::get_record(['id' => $accountid]);
+        if (!$account || $account->get('archived')) {
+            return false;
+        }
+
+        // The get_parent_context_ids() call returns the ids as strings (split from the path).
+        $contextids = array_map('intval', $context->get_parent_context_ids(true));
+
+        return in_array((int) $account->get('contextid'), $contextids, true);
     }
 
     /**

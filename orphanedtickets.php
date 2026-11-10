@@ -60,7 +60,7 @@ if ($revokeid) {
     }
 
     $ticketuser = \core_user::get_user((int) $ticket->userid);
-    $username = $ticketuser ? fullname($ticketuser) : '?';
+    $username = $ticketuser ? s(fullname($ticketuser)) : '?';
 
     if (!$confirm) {
         echo $OUTPUT->header();
@@ -112,7 +112,7 @@ foreach ($orphaned as $entry) {
     $revokelink = html_writer::link($revokeurl, get_string('revoke', 'confcheckin'));
 
     $table->data[] = [
-        $ticketuser ? fullname($ticketuser) : '?',
+        $ticketuser ? s(fullname($ticketuser)) : '?',
         format_string($tickettype->name),
         userdate($ticket->timecreated),
         $ischeckedin ? get_string('checkedin', 'confcheckin') : '-',

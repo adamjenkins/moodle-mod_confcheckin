@@ -717,6 +717,8 @@ final class ticket_service_test extends advanced_testcase {
         $ticket = ticket_service::issue_free_ticket($confcheckinid, $tickettypeid, (int) $user->id);
 
         $this->assertSame('free', $ticket->origin);
+        // The failed group-add is reported through debugging(), not error_log().
+        $this->assertDebuggingCalled();
     }
 
     /**
@@ -939,5 +941,160 @@ final class ticket_service_test extends advanced_testcase {
         $ticket = ticket_service::redeem_promocode($confcheckinid, 'TESTCODE', (int) $user->id);
 
         $this->assertSame('promo', $ticket->origin);
+    }
+
+    /**
+     * After PROMO_MAX_FAILURES wrong codes a user is locked out of promo redemption
+     * in that activity only (security audit 2026-10-28, F4), and the lockout ends
+     * after PROMO_LOCKOUT_SECONDS.
+     */
+    public function test_promo_lockout_after_max_failures(): void {
+        $this->resetAfterTest();
+
+        $confcheckinid = $this->create_confcheckin();
+        $otherconfcheckinid = $this->create_confcheckin();
+        $user = $this->getDataGenerator()->create_user();
+        $otheruser = $this->getDataGenerator()->create_user();
+        $now = time();
+
+        for ($i = 1; $i < ticket_service::PROMO_MAX_FAILURES; $i++) {
+            ticket_service::record_failed_promo_attempt($confcheckinid, (int) $user->id, $now);
+        }
+        $this->assertSame(0, ticket_service::get_promo_lockout_remaining($confcheckinid, (int) $user->id, $now));
+
+        ticket_service::record_failed_promo_attempt($confcheckinid, (int) $user->id, $now);
+        $this->assertSame(
+            ticket_service::PROMO_LOCKOUT_SECONDS,
+            ticket_service::get_promo_lockout_remaining($confcheckinid, (int) $user->id, $now)
+        );
+
+        // Other users and other activities are not affected.
+        $this->assertSame(0, ticket_service::get_promo_lockout_remaining($confcheckinid, (int) $otheruser->id, $now));
+        $this->assertSame(0, ticket_service::get_promo_lockout_remaining($otherconfcheckinid, (int) $user->id, $now));
+
+        // The lockout ends on time.
+        $this->assertSame(
+            0,
+            ticket_service::get_promo_lockout_remaining(
+                $confcheckinid,
+                (int) $user->id,
+                $now + ticket_service::PROMO_LOCKOUT_SECONDS
+            )
+        );
+    }
+
+    /**
+     * While locked out, even a valid code is refused, and no ticket is issued.
+     * The lockout check runs before any transaction is opened.
+     */
+    public function test_redeem_promocode_refused_while_locked_out(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $confcheckinid = $this->create_confcheckin();
+        $tickettypeid = $this->create_tickettype($confcheckinid);
+        $this->create_promocode($confcheckinid, ['tickettypeid' => $tickettypeid]);
+        $user = $this->getDataGenerator()->create_user();
+
+        for ($i = 0; $i < ticket_service::PROMO_MAX_FAILURES; $i++) {
+            ticket_service::record_failed_promo_attempt($confcheckinid, (int) $user->id);
+        }
+
+        try {
+            ticket_service::redeem_promocode($confcheckinid, 'TESTCODE', (int) $user->id);
+            $this->fail('A locked-out user must not be able to redeem a code');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:promocodelocked', $e->errorcode);
+        }
+        $this->assertSame(0, $DB->count_records('confcheckin_ticket', ['userid' => $user->id]));
+    }
+
+    /**
+     * A wrong code counts towards the lockout. The failing redemption is the last
+     * ticket_service transaction in this test (see test_maxperuser_boundary()).
+     */
+    public function test_redeem_promocode_wrong_code_is_counted(): void {
+        $this->resetAfterTest();
+
+        $confcheckinid = $this->create_confcheckin();
+        $user = $this->getDataGenerator()->create_user();
+
+        for ($i = 1; $i < ticket_service::PROMO_MAX_FAILURES; $i++) {
+            ticket_service::record_failed_promo_attempt($confcheckinid, (int) $user->id);
+        }
+
+        try {
+            ticket_service::redeem_promocode($confcheckinid, 'NOSUCHCODE', (int) $user->id);
+            $this->fail('An unknown code must be refused');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:invalidpromocode', $e->errorcode);
+        }
+
+        $this->assertGreaterThan(0, ticket_service::get_promo_lockout_remaining($confcheckinid, (int) $user->id));
+    }
+
+    /**
+     * require_can_start_purchase() applies the delivery-time gates before checkout
+     * (security audit 2026-10-28, F3): hidden, closed window, maxperuser reached and
+     * sold out are all refused; an open, visible type with seats left passes.
+     */
+    public function test_require_can_start_purchase_gates(): void {
+        $this->resetAfterTest();
+        global $DB;
+
+        $confcheckinid = $this->create_confcheckin();
+        $otherconfcheckinid = $this->create_confcheckin();
+        $user = $this->getDataGenerator()->create_user();
+
+        $cases = [
+            'hidden'     => [['visible' => 0], 'error:invalidtickettype'],
+            'notyetopen' => [['validfrom' => time() + DAYSECS], 'error:notavailable'],
+            'closed'     => [['validto' => time() - DAYSECS], 'error:notavailable'],
+            'soldout'    => [['capacity' => 2, 'soldcount' => 2], 'error:tickettypesoldout'],
+        ];
+        foreach ($cases as $name => [$overrides, $expected]) {
+            $tickettypeid = $this->create_tickettype($confcheckinid, ['price' => '10.00'] + $overrides);
+            $tickettype = $DB->get_record('confcheckin_tickettype', ['id' => $tickettypeid], '*', MUST_EXIST);
+            try {
+                ticket_service::require_can_start_purchase($confcheckinid, $tickettype, (int) $user->id);
+                $this->fail("Case '$name' must be refused");
+            } catch (\moodle_exception $e) {
+                $this->assertSame($expected, $e->errorcode, "Case '$name'");
+            }
+        }
+
+        // Maxperuser reached.
+        $tickettypeid = $this->create_tickettype($confcheckinid, ['price' => '10.00', 'maxperuser' => 1]);
+        $DB->insert_record('confcheckin_ticket', (object) [
+            'confcheckin'  => $confcheckinid,
+            'tickettypeid' => $tickettypeid,
+            'userid'       => $user->id,
+            'origin'       => 'purchase',
+            'promocodeid'  => null,
+            'qrtoken'      => ticket_service::generate_qrtoken(),
+            'timecreated'  => time(),
+            'timemodified' => time(),
+        ]);
+        $tickettype = $DB->get_record('confcheckin_tickettype', ['id' => $tickettypeid], '*', MUST_EXIST);
+        try {
+            ticket_service::require_can_start_purchase($confcheckinid, $tickettype, (int) $user->id);
+            $this->fail('maxperuser reached must be refused');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:maxperuserexceeded', $e->errorcode);
+        }
+
+        // A type from another instance is refused.
+        try {
+            ticket_service::require_can_start_purchase($otherconfcheckinid, $tickettype, (int) $user->id);
+            $this->fail('A type from another instance must be refused');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('error:invalidtickettype', $e->errorcode);
+        }
+
+        // An open type with seats left passes without an exception.
+        $tickettypeid = $this->create_tickettype($confcheckinid, ['price' => '10.00', 'capacity' => 5]);
+        $tickettype = $DB->get_record('confcheckin_tickettype', ['id' => $tickettypeid], '*', MUST_EXIST);
+        ticket_service::require_can_start_purchase($confcheckinid, $tickettype, (int) $user->id);
+        $this->assertTrue(ticket_service::has_capacity_for_display($tickettype));
     }
 }

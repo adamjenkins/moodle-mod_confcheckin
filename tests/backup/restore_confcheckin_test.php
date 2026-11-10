@@ -106,7 +106,7 @@ final class restore_confcheckin_test extends \restore_date_testcase {
             MUST_EXIST
         );
         $this->assertSame('Standard', $newtickettype->name);
-        // maxperuser must round-trip: it was missing from the backup field list, so
+        // The maxperuser value must round-trip: it was missing from the backup field list, so
         // every restore silently converted custom caps (and "unlimited") to the
         // column default of 1 (FABLE.md review, 2026-07-09).
         $this->assertSame(4, (int) $newtickettype->maxperuser);
@@ -172,5 +172,118 @@ final class restore_confcheckin_test extends \restore_date_testcase {
 
         $this->assertSame((int) $newgroup->id, (int) $newtickettype->addtogroupid);
         $this->assertNotSame((int) $group->id, (int) $newtickettype->addtogroupid);
+    }
+
+    /**
+     * A same-site restore keeps a system-level payment account, which the restored
+     * course can use (security audit 2026-10-28, F2).
+     */
+    public function test_restore_keeps_usable_payment_account(): void {
+        global $DB;
+
+        $account = $this->getDataGenerator()->get_plugin_generator('core_payment')->create_payment_account();
+        [$course] = $this->create_course_and_module('confcheckin', ['paymentaccountid' => $account->get('id')]);
+
+        $newcourseid = $this->backup_and_restore($course);
+
+        $newconfcheckin = $DB->get_record('confcheckin', ['course' => $newcourseid], '*', MUST_EXIST);
+        $this->assertSame((int) $account->get('id'), (int) $newconfcheckin->paymentaccountid);
+    }
+
+    /**
+     * A restore clears a payment account the target course cannot use, such as one
+     * that belongs to an unrelated category (security audit 2026-10-28, F2).
+     */
+    public function test_restore_clears_unusable_payment_account(): void {
+        global $DB;
+
+        $othercategory = $this->getDataGenerator()->create_category();
+        $account = $this->getDataGenerator()->get_plugin_generator('core_payment')->create_payment_account([
+            'contextid' => \context_coursecat::instance($othercategory->id)->id,
+        ]);
+        [$course, $confcheckin] = $this->create_course_and_module('confcheckin');
+        // Set directly: mod_form would refuse this account for this course.
+        $DB->set_field('confcheckin', 'paymentaccountid', $account->get('id'), ['id' => $confcheckin->id]);
+
+        $newcourseid = $this->backup_and_restore($course);
+
+        $newconfcheckin = $DB->get_record('confcheckin', ['course' => $newcourseid], '*', MUST_EXIST);
+        $this->assertNull($newconfcheckin->paymentaccountid);
+    }
+
+    /**
+     * Restored promo codes are held to PARAM_ALPHANUMEXT, and a code that is empty
+     * after cleaning is dropped (security audit 2026-10-28, F6).
+     */
+    public function test_restore_cleans_promocodes(): void {
+        global $DB;
+
+        [$course, $confcheckin] = $this->create_course_and_module('confcheckin');
+        $now = time();
+        $tickettypeid = (int) $DB->insert_record('confcheckin_tickettype', (object) [
+            'confcheckin'  => $confcheckin->id,
+            'name'         => 'Standard',
+            'price'        => '0.00',
+            'currency'     => 'USD',
+            'sortorder'    => 0,
+            'visible'      => 1,
+            'soldcount'    => 0,
+            'timecreated'  => $now,
+            'timemodified' => $now,
+        ]);
+        foreach (['GOOD-CODE', 'BAD CODE!', '!!!'] as $code) {
+            $DB->insert_record('confcheckin_promocode', (object) [
+                'confcheckin'  => $confcheckin->id,
+                'code'         => $code,
+                'tickettypeid' => $tickettypeid,
+                'maxuses'      => null,
+                'timesused'    => 0,
+                'timecreated'  => $now,
+            ]);
+        }
+
+        $newcourseid = $this->backup_and_restore($course);
+
+        $newconfcheckin = $DB->get_record('confcheckin', ['course' => $newcourseid], '*', MUST_EXIST);
+        $codes = $DB->get_fieldset_select('confcheckin_promocode', 'code', 'confcheckin = ?', [$newconfcheckin->id]);
+        sort($codes);
+        $this->assertSame(['BADCODE', 'GOOD-CODE'], $codes);
+    }
+
+    /**
+     * sanitise_restored_tickettype() repairs values tickettype_form would refuse,
+     * and hides the type whenever the repair could change what a buyer pays
+     * (security audit 2026-10-28, F6).
+     */
+    public function test_sanitise_restored_tickettype(): void {
+        $this->resetAfterTest();
+
+        $valid = (object) [
+            'price' => '1500', 'currency' => 'JPY', 'capacity' => '100', 'maxperuser' => '2', 'visible' => 1,
+        ];
+        \restore_confcheckin_activity_structure_step::sanitise_restored_tickettype($valid);
+        $this->assertSame('1500', $valid->price);
+        $this->assertSame('JPY', $valid->currency);
+        $this->assertSame(1, $valid->visible);
+
+        $badprice = (object) ['price' => '-5', 'currency' => 'USD', 'capacity' => null, 'maxperuser' => null, 'visible' => 1];
+        \restore_confcheckin_activity_structure_step::sanitise_restored_tickettype($badprice);
+        $this->assertSame('0.00', $badprice->price);
+        $this->assertSame(0, $badprice->visible);
+
+        $badcurrency = (object) ['price' => '10', 'currency' => 'ZZZ', 'capacity' => null, 'maxperuser' => null, 'visible' => 1];
+        \restore_confcheckin_activity_structure_step::sanitise_restored_tickettype($badcurrency);
+        $this->assertSame('JPY', $badcurrency->currency);
+        $this->assertSame(0, $badcurrency->visible);
+
+        $fractional = (object) ['price' => '500.5', 'currency' => 'JPY', 'capacity' => null, 'maxperuser' => null, 'visible' => 1];
+        \restore_confcheckin_activity_structure_step::sanitise_restored_tickettype($fractional);
+        $this->assertSame(0, $fractional->visible);
+
+        $badcounts = (object) ['price' => '10', 'currency' => 'USD', 'capacity' => '-3', 'maxperuser' => '-1', 'visible' => 1];
+        \restore_confcheckin_activity_structure_step::sanitise_restored_tickettype($badcounts);
+        $this->assertSame(0, $badcounts->capacity);
+        $this->assertSame(1, $badcounts->maxperuser);
+        $this->assertSame(0, $badcounts->visible);
     }
 }

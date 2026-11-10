@@ -28,6 +28,13 @@ require_once($CFG->libdir . '/formslib.php');
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class promocode_form extends \moodleform {
+    /**
+     * Shortest code an organiser may save (security audit 2026-10-28, F4): together
+     * with the redemption lockout in ticket_service, this keeps codes from being
+     * found by guessing. Codes saved before this limit existed still redeem.
+     */
+    public const MIN_CODE_LENGTH = 6;
+
     /** @var int[] Valid tickettypeid option keys, set by definition() from customdata. */
     protected $tickettypeids = [];
 
@@ -105,6 +112,8 @@ class promocode_form extends \moodleform {
         $code = trim((string) ($data['code'] ?? ''));
         if ($code === '') {
             $errors['code'] = get_string('required');
+        } else if (\core_text::strlen($code) < self::MIN_CODE_LENGTH) {
+            $errors['code'] = get_string('error:promocodetooshort', 'confcheckin', self::MIN_CODE_LENGTH);
         } else {
             $confcheckinid = (int) ($this->_customdata['confcheckinid'] ?? 0);
             $excludeid = (int) ($this->_customdata['excludeid'] ?? 0);

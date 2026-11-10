@@ -104,7 +104,7 @@ echo html_writer::div('', 'mod_confcheckin-scanner-error alert alert-danger', ['
 // alongside the video itself (see amd/src/scanner.js's start/stopCameraScanning()) so
 // nothing -- not even an empty bordered box -- shows before the camera is actually on.
 echo html_writer::start_div('mod_confcheckin-scanner-videowrap', ['hidden' => 'hidden']);
-// playsinline/muted/autoplay as literal attributes (not just JS properties set
+// Set playsinline/muted/autoplay as literal attributes (not just JS properties set
 // later): iOS Safari is known to require playsinline present in the initial
 // HTML for a custom camera UI to render inline instead of going fullscreen/
 // failing outright.

@@ -40,8 +40,9 @@
  * its OLD (unmapped) value during the main pass, then fixes them all up in
  * after_restore() below.
  *
- * paymentaccountid is deliberately NEVER remapped -- see
- * backup_confcheckin_stepslib.php's docblock for why.
+ * paymentaccountid is never remapped (core_payment accounts are not part of a
+ * course backup), but after_restore() keeps it only on a same-site restore where
+ * the account is one the target course can use, and clears it otherwise.
  */
 class restore_confcheckin_activity_structure_step extends restore_activity_structure_step {
     /**
@@ -115,6 +116,8 @@ class restore_confcheckin_activity_structure_step extends restore_activity_struc
             $data->maxperuser = null;
         }
 
+        self::sanitise_restored_tickettype($data);
+
         $newitemid = $DB->insert_record('confcheckin_tickettype', $data);
         $this->set_mapping('confcheckin_tickettype', $oldid, $newitemid);
     }
@@ -137,6 +140,25 @@ class restore_confcheckin_activity_structure_step extends restore_activity_struc
         $data->confcheckin = $this->get_new_parentid('confcheckin');
         $data->tickettypeid = $this->get_mappingid('confcheckin_tickettype', $data->tickettypeid);
         $data->timeexpires = $data->timeexpires !== null ? $this->apply_date_offset($data->timeexpires) : null;
+
+        // Hold the code to the same character rule as promocode_form (security audit
+        // 2026-10-28, F6). A code that is empty after cleaning, or that now clashes
+        // with another code in this activity, is dropped rather than inserted; a
+        // restored ticket that used it keeps its ticket, with no promo code link.
+        $data->code = clean_param(trim((string) $data->code), PARAM_ALPHANUMEXT);
+        if (
+            $data->code === ''
+                || !$data->tickettypeid
+                || $DB->record_exists('confcheckin_promocode', ['confcheckin' => $data->confcheckin, 'code' => $data->code])
+        ) {
+            return;
+        }
+        if ($data->maxuses !== null && (!ctype_digit((string) $data->maxuses) || (int) $data->maxuses < 1)) {
+            // Not a valid limit: restore the code as used up (0 uses) rather than
+            // unlimited, so the organiser has to set a real limit before it works.
+            $data->maxuses = 0;
+        }
+        $data->timesused = max(0, (int) ($data->timesused ?? 0));
 
         $newitemid = $DB->insert_record('confcheckin_promocode', $data);
         $this->set_mapping('confcheckin_promocode', $oldid, $newitemid);
@@ -209,6 +231,62 @@ class restore_confcheckin_activity_structure_step extends restore_activity_struc
     }
 
     /**
+     * Holds a restored ticket type to the same rules tickettype_form enforces
+     * (security audit 2026-10-28, F6), since a crafted or damaged backup can carry
+     * values the form would refuse. Anything that cannot be repaired safely leaves
+     * the type HIDDEN, so the organiser reviews it before anyone can buy it:
+     * - an invalid or negative price becomes 0.00, hidden (never silently "free");
+     * - an unknown currency becomes JPY (the column default), hidden;
+     * - a fractional price in a zero-decimal currency is kept, hidden;
+     * - a capacity that is not a whole number of at least 1 becomes 0 (sold out), hidden;
+     * - a maxperuser that is not a whole number of at least 1 becomes 1 (the default).
+     *
+     * @param stdClass $data The tickettype record about to be inserted (changed in place)
+     * @return void
+     */
+    public static function sanitise_restored_tickettype(stdClass $data): void {
+        global $CFG;
+        require_once($CFG->dirroot . '/mod/confcheckin/lib.php');
+
+        $hide = false;
+
+        $price = confcheckin_parse_price((string) ($data->price ?? ''));
+        if ($price === false) {
+            $data->price = '0.00';
+            $price = 0.0;
+            $hide = true;
+        }
+
+        $currency = strtoupper(trim((string) ($data->currency ?? '')));
+        if (!preg_match('/^[A-Z]{3}$/', $currency) || !confcheckin_is_valid_currency($currency)) {
+            $data->currency = 'JPY';
+            $hide = true;
+        } else {
+            $data->currency = $currency;
+        }
+
+        if (confcheckin_is_zero_decimal_currency($data->currency) && floor($price) != $price) {
+            $hide = true;
+        }
+
+        if (
+            isset($data->capacity) && $data->capacity !== null
+                && (!ctype_digit((string) $data->capacity) || (int) $data->capacity < 1)
+        ) {
+            $data->capacity = 0;
+            $hide = true;
+        }
+
+        if ($data->maxperuser !== null && (!ctype_digit((string) $data->maxperuser) || (int) $data->maxperuser < 1)) {
+            $data->maxperuser = 1;
+        }
+
+        if ($hide) {
+            $data->visible = 0;
+        }
+    }
+
+    /**
      * Restores files attached to the confcheckin intro.
      *
      * @return void
@@ -241,6 +319,21 @@ class restore_confcheckin_activity_structure_step extends restore_activity_struc
             // no usable presenteronly ticket types, a real, already-supported state (see
             // classes/local/eligibility.php's docblock), not a broken one.
             $DB->set_field('confcheckin', 'confprogramcmid', $newcmid ?: null, ['id' => $confcheckinid]);
+        }
+
+        // Keep the payment account only when it is the same site's account and this
+        // course can use it (system or a parent category of the target course);
+        // otherwise clear it so the organiser picks one again (security audit
+        // 2026-10-28, F2). An id from another site names an unrelated account here.
+        if (!empty($confcheckin->paymentaccountid)) {
+            $keep = $this->task->is_samesite()
+                && \mod_confcheckin\payment\service_provider::is_account_usable_in_context(
+                    (int) $confcheckin->paymentaccountid,
+                    \context_course::instance($this->get_courseid())
+                );
+            if (!$keep) {
+                $DB->set_field('confcheckin', 'paymentaccountid', null, ['id' => $confcheckinid]);
+            }
         }
 
         $tickettypes = $DB->get_records('confcheckin_tickettype', ['confcheckin' => $confcheckinid]);

@@ -89,6 +89,31 @@ final class promocode_form_test extends advanced_testcase {
         $this->assertSame([], $errors);
     }
 
+    /**
+     * A code shorter than MIN_CODE_LENGTH is refused (security audit 2026-10-28, F4);
+     * one of exactly that length passes.
+     */
+    public function test_short_code_rejected(): void {
+        $this->resetAfterTest();
+        [$confcheckinid, $tickettypeid] = $this->create_fixture();
+
+        $form = new promocode_form(null, [
+            'confcheckinid'     => $confcheckinid,
+            'tickettypeoptions' => [$tickettypeid => 'Test ticket'],
+        ]);
+
+        $tooshort = str_repeat('A', promocode_form::MIN_CODE_LENGTH - 1);
+        $errors = $form->validation($this->base_data($tickettypeid, ['code' => $tooshort]), []);
+        $this->assertSame(
+            get_string('error:promocodetooshort', 'confcheckin', promocode_form::MIN_CODE_LENGTH),
+            $errors['code'] ?? null
+        );
+
+        $justlongenough = str_repeat('A', promocode_form::MIN_CODE_LENGTH);
+        $errors = $form->validation($this->base_data($tickettypeid, ['code' => $justlongenough]), []);
+        $this->assertArrayNotHasKey('code', $errors);
+    }
+
     public function test_duplicate_code_rejected(): void {
         $this->resetAfterTest();
         global $DB;
