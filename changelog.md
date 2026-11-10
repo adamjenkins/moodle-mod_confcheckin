@@ -1,5 +1,72 @@
 # Changelog
 
+## [0.1.4] - 2026-11-10
+
+### Added
+
+- `db/caches.php` with the `promoattempts` application cache (string `cachedef_promoattempts`),
+  counting wrong promo codes per user and activity.
+- `\mod_confcheckin\local\pdf_document`, a `\pdf` subclass whose `fileExists()` and
+  `getCachedFileContents()` refuse everything except the document's own TCPDF temp files.
+- `pdf_generator::inline_images()`: before rendering, every `<img>` in template HTML is rewritten
+  so TCPDF only sees inline data. `data:image/(png|jpeg|gif);base64` sources are kept; http(s)
+  sources are fetched through Moodle's `\curl` (10 s timeout, 5 MB limit, request-cached) and
+  inlined when they are PNG, JPEG or GIF; all other `<img>` tags are dropped.
+- `ticket_service::require_can_start_purchase()`, called from
+  `service_provider::get_payable()`, runs the delivery gates (visibility and instance, eligibility
+  and availability window, `maxperuser`, capacity) before checkout.
+- `service_provider::is_account_usable_in_context()`: a payment account must exist, not be
+  archived, and belong to the activity's context or a parent of it.
+- Promo code lockout: `ticket_service::PROMO_MAX_FAILURES` (10) wrong codes lock redemption for
+  that user and activity for `PROMO_LOCKOUT_SECONDS` (900); new methods
+  `get_promo_lockout_remaining()` and `record_failed_promo_attempt()`, new string
+  `error:promocodelocked`.
+- `promocode_form::MIN_CODE_LENGTH` (6), with the new string `error:promocodetooshort`.
+  Codes saved earlier still redeem.
+- Privacy: the provider implements `\core_payment\privacy\consumer_provider`
+  (`get_contextid_for_payment()`, payment area `tickettype`) and links the `core_payment`
+  subsystem, so ticket payments are exported (under "Ticket payments") and deleted with the
+  user's data, following the pattern of core's enrol_fee. New strings
+  `privacy:metadata:core_payment` and `privacy:path:payments`. The provider's header gains a
+  `2020 Shamim Rezaie` copyright line for the adapted code.
+- New and extended PHPUnit tests for restore, the promo code form, PDF generation, placeholders,
+  `ticket_service`, the payment service provider and the privacy provider.
+
+### Changed
+
+- `mod_form.php` accepts only a payment account that `get_payment_accounts_menu()` offered for
+  the context (new string `error:invalidpaymentaccount`), and pins the hidden
+  `paymentaccountid` to 0 when no account is offered.
+- Restore: `paymentaccountid` is kept only on a same-site restore into a course that can use the
+  account, and cleared otherwise. The new
+  `restore_confcheckin_activity_structure_step::sanitise_restored_tickettype()` fixes an invalid
+  price (0.00), unknown currency (JPY), bad capacity (0) or bad `maxperuser` (1) and hides the
+  type when it had to change price, currency or capacity, or when a zero-decimal currency has a
+  fractional price. Restored promo codes are cleaned to `PARAM_ALPHANUMEXT`; empty or duplicate
+  codes, or codes whose ticket type did not restore, are skipped; an invalid `maxuses` becomes 0.
+- Check-in report: honours separate groups (group menu, enrolled users limited to the current
+  group; viewers without `moodle/site:accessallgroups` can only toggle check-in for members of
+  their group and see a "not in a group" notice otherwise). Reworded `checkinreport_help`.
+- `error_log()` on a failed `addtogroupid` group add replaced with `debugging()`.
+- README (English and Japanese): the Moodle-app view is described as not yet tested in a real
+  app build.
+
+### Fixed
+
+- A presenter submissions test no longer depends on database row order.
+
+### Security
+
+- TCPDF no longer fetches template URLs with its own raw curl (bypassing
+  `curlsecurityblockedhosts`/`curlsecurityallowedport`) or reads absolute local paths from the
+  server's disk.
+- `[[submissiontitle]]`, `[[track]]` and the `{title}`/`{track}` list placeholders are escaped
+  for attributes (`format_string()` without escaping, then `s()`).
+- Payments can only be routed to a payment account usable in the course (form, checkout and
+  restore), and checkout cannot start for a ticket that delivery would refuse.
+- Promo code guessing is throttled, and new codes have a minimum length.
+- User names in the check-in report and the orphaned tickets page are escaped with `s()`.
+
 ## [0.1.3] - 2026-10-21
 
 ### Added
